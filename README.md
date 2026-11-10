@@ -2,12 +2,11 @@
 
 ## Overview
 
-`skillopt` searches for **reasoning skills** (instruction prompts) that keep a **fixed** target LLM
-(default: Qwen3-8B) accurate while spending fewer tokens, thinking included, on GSM8K and BBH.
+`skillopt` searches for **reasoning skills**, i.e. prompts, that keep a fixed LLM (default Qwen3-8B) accurate while
+using fewer tokens, thinking included. Benchmarks: GSM8K and BBH.
 
-- **You write** one `Optimizer` class: it proposes prompts and updates them from the results.
-- **The framework** evaluates each prompt on each benchmark (accuracy and tokens), returns the results and saves
-  everything. It never scores, ranks or selects.
+- **You write** one `Optimizer` that proposes prompts and updates them from the results.
+- **The framework** evaluates each prompt on each benchmark, returns accuracy and token usage, and saves everything.
 
 ```mermaid
 flowchart TD
@@ -19,132 +18,117 @@ flowchart TD
 
 ## Requirements
 
-- **Python** >= 3.10
-- **GPU** (real runs only): one GPU with 24 GB VRAM for Qwen3-8B. `--mock` needs no GPU.
+Python >= 3.10. Real runs need one 24 GB GPU; `--mock` needs none.
 
-| Install | Packages | Needed for |
+| Install | Adds | For |
 |---|---|---|
-| `pip install -e .` | `pyyaml` | always (core) |
-| `pip install -e .[dev]` | + `pytest` | tests; `--mock` runs |
-| `pip install -e .[data]` | + `datasets` | downloading GSM8K / BBH from Hugging Face (`source: hf`) |
-| `pip install -e .[vllm]` | + `vllm` | default presets `*-vllm` (Linux or WSL2, CUDA GPU) |
-| `pip install -e .[hf]` | + `torch`, `transformers`, `accelerate`, `bitsandbytes` | presets `qwen3-8b-hf` / `qwen3-8b-hf-4bit` |
+| `pip install -e .` | `pyyaml` | core |
+| `pip install -e .[dev]` | `pytest` | tests, `--mock` |
+| `pip install -e .[data]` | `datasets` | GSM8K / BBH from Hugging Face |
+| `pip install -e .[vllm]` | `vllm` | `*-vllm` presets (default), Linux / WSL2 only |
+| `pip install -e .[hf]` | `torch`, `transformers`, `accelerate`, `bitsandbytes` | `qwen3-8b-hf*` presets |
 
-- Default real run (`python run.py`): `pip install -e .[vllm,data]`.
-- `qwen3-8b-server` / `openai-api` use only the standard library (an OpenAI-compatible HTTP endpoint).
-- Heavy packages are imported lazily, so a missing extra fails only when that backend or data source is used.
+A default real run needs `.[vllm,data]`. `qwen3-8b-server` and `openai-api` need no extras.
 
-## The Optimizer interface
+## Optimizer
 
 ```python
 from skillopt.optimizer import Optimizer, register_optimizer
+from skillopt.skills import Skill
 
 @register_optimizer("mine")
-class Mine(Optimizer):                       # self.llm = optimizer LLM, self.params = config params
-    def initial_prompts(self) -> list[Skill]: ...                # round 0
-    def update(self, results, history) -> list[Skill]: ...       # [] = stop
+class Mine(Optimizer):                                        # self.llm, self.params
+    def initial_prompts(self) -> list[Skill]: ...             # round 0
+    def update(self, results, history) -> list[Skill]: ...    # [] = stop
 ```
 
-- `results`: this round's `SkillEvaluation`s (same order as the prompts); `history`: earlier rounds, oldest first.
-- Add one = one file in `skillopt/optimizer/algorithms/` (auto-discovered) + `optimizer: {name: mine, ...params}`.
-- `my_optimizer.py` is the empty template (fill it in); `opro.py` is a worked example (OPRO-style).
-- `skillopt/baselines.py` = ready-made skills `direct` / `cot` / `cod` an algorithm may use (`get_baseline`).
+- `results`: this round's `SkillEvaluation`s, in prompt order. `history`: earlier rounds, oldest first.
+- Add one file to `skillopt/optimizer/algorithms/` and set `optimizer: {name: mine, ...}`.
+- Fill in the template `my_optimizer.py`; `opro.py` is a worked example.
+- Baseline skills `direct`, `cot`, `cod`: `get_baseline` in `skillopt/baselines.py`.
 
-## Evaluator result format
+## Evaluator results
 
 ```
-SkillEvaluation            .skill (Skill), .skill_id, .split, .results
-  results[benchmark]  ->   EvalResult
-    n, accuracy, avg_input_tokens, avg_output_tokens (thinking included), avg_reasoning_tokens,
-    avg_total_tokens, avg_latency, failures(k),
-    items: list[ItemResult]  (question, prediction, gold, correct, usage, latency, response_text, reasoning_text)
+SkillEvaluation       skill, skill_id, split, results
+  results[bench]  ->  EvalResult
+                        n, accuracy, failures(k), items
+                        avg_input_tokens, avg_output_tokens, avg_reasoning_tokens, avg_total_tokens, avg_latency
 ```
 
-`Evaluator.evaluate(skills, split)` returns one `SkillEvaluation` per skill; it only measures.
+`avg_output_tokens` includes thinking. Each item keeps the question, prediction, gold, correctness, usage and texts.
 
-## Config (`configs/config.yaml`)
+## Config
+
+`configs/config.yaml`:
 
 ```yaml
-benchmarks:                       # keyed by name, each measured separately; the loop evaluates split `train`
+benchmarks:                                                    # bbh train / val are per task
   gsm8k: {source: hf, train: 200, val: 200}
-  bbh: {source: hf, tasks: all, heldout: [web_of_lies], train: 10, val: 10}   # train/val per task; test = rest
-optimizer: {name: my_optimizer}   # every key except `name` goes to the class constructor
-max_iterations: 5                 # max update() calls
-eval: {skills: [direct, cot, cod], split: test, limit: null}   # used only with --eval-only
+  bbh:   {source: hf, tasks: all, heldout: [web_of_lies], train: 10, val: 10}
+optimizer: {name: my_optimizer}                                # other keys -> constructor
+max_iterations: 5                                              # max update() calls
+eval: {skills: [direct, cot, cod], split: test, limit: null}   # --eval-only only
 ```
 
-Plus `llm` (roles `target` / `optimizer` -> model presets), `hardware.vram_gb`, `evaluator.batch_size`, `run`, `seed`.
-An optional `name` in an entry picks the benchmark class (default: the key), e.g. `bbh_nlu: {name: bbh, tasks: [nlu]}`.
+Also `llm` (target / optimizer presets), `hardware.vram_gb`, `evaluator.batch_size`, `run`, `seed`.
 
 ## Benchmarks
 
 | | GSM8K | BBH (BIG-Bench Hard) |
 |---|---|---|
-| Content | grade-school math word problems | 27 hard reasoning tasks (logic, symbolic, language) |
-| Answer | a number | option letter, True/False, Yes/No, number, ... |
-| Original data | train 7,473 · test 1,319 | test only, ~250 per task (6,511 total) |
+| Content | grade-school math | 27 reasoning tasks |
+| Answer | number | letter, True/False, Yes/No, ... |
+| Original | train 7,473 · test 1,319 | test only, 6,511 total |
 | Links | [paper](https://arxiv.org/abs/2110.14168) · [openai/gsm8k](https://huggingface.co/datasets/openai/gsm8k) | [paper](https://aclanthology.org/2023.findings-acl.824/) · [lukaemon/bbh](https://huggingface.co/datasets/lukaemon/bbh) |
 
-Splits with the default `config.yaml`:
-
-| Split | Purpose | GSM8K | BBH |
+| Split | Used for | GSM8K | BBH |
 |---|---|---|---|
-| `train` | evaluated every loop round | 200 | 10 per task (260) |
-| `val` | choosing the final skill | 200 | 10 per task (260) |
-| `test` | reporting the final score | 1,319 (all) | rest of each task (5,741) |
-| `heldout` | transfer to unseen tasks | — | web_of_lies (250) |
+| `train` | every loop round | 200 | 10 per task (260) |
+| `val` | picking the final skill | 200 | 10 per task (260) |
+| `test` | final score | 1,319 | rest of each task (5,741) |
+| `heldout` | unseen tasks | — | web_of_lies (250) |
 
-- GSM8K `train` / `val` are disjoint samples of the official train set. BBH has no train set, so each task is split.
-- Only `train` runs in the loop; the others run with `--eval-only --split <split>`.
-- BBH `tasks:` / `heldout:` take task names, `algorithmic` (15 tasks), `nlu` (12), or `all`
-  (list: `BBH_TASK_GROUPS` in `skillopt/benchmarks/bbh.py`).
+- GSM8K `train` / `val` come from the official train set. BBH has none, so each task is split.
+- The loop runs only `train`; run the others with `--eval-only --split <split>`.
+- BBH `tasks:` / `heldout:` take task names, `algorithmic`, `nlu` or `all` (`BBH_TASK_GROUPS` in `bbh.py`).
+
+## Running
+
+```bash
+python run.py --mock --set optimizer.name=opro                            # no GPU, sample data
+python run.py                                                             # real loop on train
+python run.py --set max_iterations=10 --set benchmarks.gsm8k.train=100    # override any key
+python run.py --eval-only --skills cot <skill.json> --split test          # evaluate skills
+```
+
+`--mock` with the default `my_optimizer` raises `NotImplementedError` until it is filled in.
 
 ## Run directory
 
 ```
 runs/<timestamp>_<name>/
-  config.yaml, meta.json
-  rounds/000/                     round 0 = initial prompts; 001, 002, ... = update() outputs
-    skills/<skill_id>.json
-    results/<benchmark>/<skill_id>.jsonl          per-item results
-    results/<benchmark>/<skill_id>.summary.json
-    summary.json                                  [SkillEvaluation.summary(), ...]
-    usage.json                                    cumulative target / optimizer usage after this round
-  usage/target.json, usage/optimizer.json
-  run.json                                        {rounds, stop_reason, max_iterations}
+├── config.yaml, meta.json, run.json
+├── usage/{target,optimizer}.json
+└── rounds/000/                              000 = initial prompts, 001+ = update() outputs
+    ├── skills/<skill_id>.json
+    ├── results/<bench>/<skill_id>.jsonl     per item
+    ├── summary.json
+    └── usage.json                           cumulative
 ```
 
-`--eval-only` writes `runs/<timestamp>_<name>_eval/` with `skills/`, `results/<split>/<benchmark>/`, `summary.json`,
-`usage/target.json`.
+`--eval-only` writes `runs/<timestamp>_<name>_eval/`.
 
-## Running
+## Models
 
-One config (`configs/config.yaml`), one entry point (`run.py`).
-
-```bash
-pip install -e .[dev]                       # enough for --mock
-python run.py --mock --set optimizer.name=opro      # no GPU: mock presets + bundled sample data
-python run.py --mock                        # fails with NotImplementedError until my_optimizer.py is filled in
-pip install -e .[vllm,data]                 # real runs
-python run.py                               # the loop on split train
-python run.py --set max_iterations=10 --set benchmarks.gsm8k.train=100
-python run.py --eval-only --skills cot runs/<run>/rounds/001/skills/opro-i1-c0.json --split test
-```
-
-`--set a.b=value` overrides any key (value parsed as YAML; list items by index, e.g. `a.0`;
-benchmarks are addressed by key, e.g. `benchmarks.gsm8k.train`).
+Presets in `configs/models/`: `qwen3-8b-vllm` (default), `-fp8-vllm`, `-awq-vllm`, `qwen3-4b-vllm`, `qwen3-8b-hf`,
+`-hf-4bit`, `qwen3-8b-server`, `openai-api`, `mock`. The default reserves 0.85 × 24 = 20.4 GB. Roles with the same
+model share one engine, and `check_vram_budget` stops the run before loading if `hardware.vram_gb` is exceeded.
 
 ## Extending
 
-- **Optimizer** — see above (`register_optimizer`).
-- **LLM backend** — subclass `BaseLLM`, implement `_generate(prompt, gen) -> RawGeneration`, decorate with
-  `@register_llm("name")`, import it in `skillopt/llm/__init__.py`, add a preset in `configs/models/`.
-- **Benchmark** — subclass `Benchmark` (`load`, `extract_answer`, `score`, `answer_format`, `splits` if not
-  train/val/test), decorate with `@register_benchmark("name")`, import it in `skillopt/benchmarks/__init__.py`, add an entry to `benchmarks:`.
-
-## Models and the 24 GB VRAM budget
-
-Presets in `configs/models/`: `qwen3-8b-vllm` (default, bf16, 0.85 x 24 = 20.4 GB), `qwen3-8b-fp8-vllm`,
-`qwen3-8b-awq-vllm`, `qwen3-4b-vllm`, `qwen3-8b-hf` / `qwen3-8b-hf-4bit`, `qwen3-8b-server`, `openai-api`, `mock`.
-Roles with the same model share one engine; `check_vram_budget` raises `VRAMBudgetError` before loading if the
-total exceeds `hardware.vram_gb`.
+| Add | How |
+|---|---|
+| Optimizer | see [Optimizer](#optimizer) |
+| LLM backend | subclass `BaseLLM`, implement `_generate`, `@register_llm("name")`, import in `skillopt/llm/__init__.py`, add a preset |
+| Benchmark | subclass `Benchmark`, `@register_benchmark("name")`, import in `skillopt/benchmarks/__init__.py`, add to `benchmarks:` |
