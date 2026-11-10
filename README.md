@@ -6,12 +6,11 @@ across a list of benchmarks. The research algorithm is ONE class you write (an `
 evaluates its prompts, hands back the results and saves everything. It never scores, ranks or selects.
 
 ```mermaid
-flowchart LR
-    I["optimizer.initial_prompts()"] --> E[Evaluator<br/>every prompt x every benchmark]
-    E --> R["results: list of SkillEvaluation"]
-    R --> U["optimizer.update(results, history)"]
+flowchart TD
+    I["optimizer.initial_prompts()"] -->|prompts| E["Evaluator<br/>each prompt × each benchmark"]
+    E -->|results| U["optimizer.update(results, history)"]
     U -->|new prompts| E
-    U -->|"[] or max_iterations reached"| S[stop]
+    U -->|"[] or max_iterations"| S([stop])
 ```
 
 ## The Optimizer interface
