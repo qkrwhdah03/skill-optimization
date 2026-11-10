@@ -1,0 +1,8 @@
+{"input": "Question: Kara lies. Jack says Kara tells the truth. Ella says Jack tells the truth. Olive says Ella lies. Dan says Olive lies. Does Dan tell the truth?", "target": "No"}
+{"input": "Question: Kara tells the truth. Hugo says Kara tells the truth. Ella says Hugo lies. Ben says Ella lies. Iris says Ben tells the truth. Does Iris tell the truth?", "target": "Yes"}
+{"input": "Question: Ava tells the truth. Grace says Ava tells the truth. Paul says Grace lies. Kara says Paul lies. Noah says Kara lies. Does Noah tell the truth?", "target": "No"}
+{"input": "Question: Chloe lies. Noah says Chloe tells the truth. Mia says Noah lies. Ella says Mia tells the truth. Olive says Ella tells the truth. Does Olive tell the truth?", "target": "Yes"}
+{"input": "Question: Kara lies. Noah says Kara lies. Jack says Noah tells the truth. Dan says Jack tells the truth. Chloe says Dan tells the truth. Does Chloe tell the truth?", "target": "Yes"}
+{"input": "Question: Hugo lies. Leo says Hugo lies. Chloe says Leo tells the truth. Iris says Chloe lies. Mia says Iris tells the truth. Does Mia tell the truth?", "target": "No"}
+{"input": "Question: Leo lies. Ben says Leo tells the truth. Finn says Ben tells the truth. Mia says Finn lies. Kara says Mia tells the truth. Does Kara tell the truth?", "target": "Yes"}
+{"input": "Question: Grace lies. Finn says Grace tells the truth. Iris says Finn tells the truth. Leo says Iris lies. Paul says Leo tells the truth. Does Paul tell the truth?", "target": "Yes"}

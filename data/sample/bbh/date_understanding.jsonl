@@ -1,0 +1,8 @@
+{"input": "Today is 08/01/2021. What is the date 1 days before today in MM/DD/YYYY?\nOptions:\n(A) 07/31/2020\n(B) 08/02/2021\n(C) 08/07/2021\n(D) 07/31/2022\n(E) 08/01/2021\n(F) 07/31/2021", "target": "(F)"}
+{"input": "Today is 12/24/2019. What is the date 7 days before today in MM/DD/YYYY?\nOptions:\n(A) 12/10/2019\n(B) 01/16/2020\n(C) 12/17/2018\n(D) 12/16/2019\n(E) 12/17/2019\n(F) 12/19/2019", "target": "(E)"}
+{"input": "Today is 04/09/2019. What is the date 7 days after today in MM/DD/YYYY?\nOptions:\n(A) 04/15/2019\n(B) 04/16/2019\n(C) 04/17/2019\n(D) 04/18/2019\n(E) 04/09/2019\n(F) 05/16/2019", "target": "(B)"}
+{"input": "Today is 03/23/2019. What is the date 30 days before today in MM/DD/YYYY?\nOptions:\n(A) 03/23/2019\n(B) 01/22/2019\n(C) 02/21/2019\n(D) 02/28/2019\n(E) 02/23/2019\n(F) 02/21/2020", "target": "(C)"}
+{"input": "Today is 12/26/2021. What is the date 1 days before today in MM/DD/YYYY?\nOptions:\n(A) 12/27/2021\n(B) 12/23/2021\n(C) 11/25/2021\n(D) 12/25/2021\n(E) 12/26/2021\n(F) 12/25/2022", "target": "(D)"}
+{"input": "Today is 01/06/2023. What is the date 30 days after today in MM/DD/YYYY?\nOptions:\n(A) 02/12/2023\n(B) 02/05/2024\n(C) 01/29/2023\n(D) 03/07/2023\n(E) 02/05/2022\n(F) 02/05/2023", "target": "(F)"}
+{"input": "Today is 09/03/2020. What is the date 30 days before today in MM/DD/YYYY?\nOptions:\n(A) 07/05/2020\n(B) 08/02/2020\n(C) 08/05/2019\n(D) 08/04/2021\n(E) 08/04/2020\n(F) 07/28/2020", "target": "(E)"}
+{"input": "Today is 11/28/2021. What is the date 30 days before today in MM/DD/YYYY?\nOptions:\n(A) 10/29/2020\n(B) 10/29/2021\n(C) 10/22/2021\n(D) 11/28/2021\n(E) 10/28/2021\n(F) 10/30/2021", "target": "(B)"}

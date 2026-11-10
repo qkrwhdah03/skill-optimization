@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skillopt"
+version = "0.1.0"
+description = "Reasoning-skill optimization pipeline: optimize prompts for accuracy and token efficiency of a fixed target LLM"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["pyyaml"]
+
+[project.optional-dependencies]
+vllm = ["vllm"]
+hf = ["torch", "transformers", "accelerate", "bitsandbytes"]
+data = ["datasets"]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["skillopt*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

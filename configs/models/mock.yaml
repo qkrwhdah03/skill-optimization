@@ -1,0 +1,7 @@
+# Deterministic mock (no model, no GPU) for end-to-end runs.
+backend: mock
+model: mock-qwen3
+think_words: 20
+seed: 0
+generation:
+  enable_thinking: true

@@ -1,0 +1,8 @@
+{"input": "not False or True and True is", "target": "True"}
+{"input": "not True or False or True is", "target": "True"}
+{"input": "not False or False and True is", "target": "True"}
+{"input": "not False and False and False is", "target": "False"}
+{"input": "True or True or False is", "target": "True"}
+{"input": "False or True and True is", "target": "True"}
+{"input": "not False and False or True is", "target": "True"}
+{"input": "not False and True or True is", "target": "True"}

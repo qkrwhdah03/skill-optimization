@@ -1,0 +1,14 @@
+# Qwen3-8B AWQ 4-bit (~6 GB weights).
+backend: vllm
+model: Qwen/Qwen3-8B-AWQ
+engine:
+  quantization: awq
+  gpu_memory_utilization: 0.85
+  max_model_len: 16384
+generation:
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  max_tokens: 8192
+  seed: 0
+  enable_thinking: true

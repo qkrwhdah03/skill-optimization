@@ -1,0 +1,43 @@
+# The ONE run config. Model presets live in configs/models/; there are no per-benchmark or per-mode configs.
+#   python run.py                 real run: initial_prompts -> evaluate on split `train` -> update -> ... (saved per round; no final evaluation)
+#   python run.py --mock          no GPU: mock presets + bundled sample data (data/sample/), same config
+#   python run.py --eval-only     evaluate the `eval:` skills only (no optimization)
+#   python run.py --eval-only --split test --skills ...   evaluate chosen skills on the test split
+#   python run.py --set KEY=VALUE override any key, e.g. --set benchmarks.gsm8k.train=50
+seed: 0
+run: {root: runs, name: run}          # outputs go to runs/<timestamp>_<name>/
+hardware: {vram_gb: 24}               # VRAM budget checked before any model is built
+
+# LLM roles. Same preset for both -> ONE shared vLLM engine (~0.85 * 24 = 20.4 GB).
+# Swap a model by preset name, e.g. --set llm.optimizer.preset=openai-api.
+llm:
+  target:
+    preset: qwen3-8b-vllm
+  optimizer:
+    preset: qwen3-8b-vllm
+    generation: {temperature: 0.8, enable_thinking: false, max_tokens: 1024}
+
+# Benchmarks the Evaluator measures (raw, per benchmark), keyed by name. Splits: train (evaluated every loop
+# round), val, test, heldout (bbh only); val/test/heldout only via --eval-only --split <split>.
+# GSM8K: official train 7,473 / test 1,319, no task subdivision (so no tasks/heldout options).
+#   train = seeded sample of the official train set; val = disjoint sample of it; test = official test (1,319).
+# BBH: 27 tasks, 6,511 examples, one official test split per task (250 each, except causal_judgement 187,
+#   penguins_in_a_table 146, snarks 178); groups algorithmic (15) / nlu (12).
+#   tasks / heldout: task names, group names, or `all`. heldout tasks are removed from `tasks` and never used
+#   during the search (only via --eval-only --split heldout).
+#   train / val are PER TASK: each task is shuffled (seeded), first `train` items -> train, next `val` -> val,
+#   the rest of that task -> test.
+#   Default: 26 tasks (all but web_of_lies) -> train 26 x 10 = 260, val 260, test 5,741; heldout web_of_lies 250.
+benchmarks:
+  gsm8k: {source: hf, train: 200, val: 200}       # totals; test = official test, always all 1,319
+  bbh: {source: hf, tasks: all, heldout: [web_of_lies], train: 10, val: 10}   # train/val per task; test = rest of each task
+
+evaluator: {batch_size: 64}
+
+# Optimizer = ONE class you write (skillopt/optimizer/algorithms/<file>.py, @register_optimizer("<name>")).
+# Every key except `name` is passed to its constructor. Worked example: {name: opro, num_candidates: 4, top_k: 5}.
+optimizer: {name: my_optimizer}
+max_iterations: 5        # max number of update() calls; the loop also stops when update() returns []
+
+# Used only with --eval-only (flags --skills / --split / --limit override these).
+eval: {skills: [direct, cot, cod], split: test, limit: null}
