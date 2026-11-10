@@ -1,9 +1,13 @@
 # skillopt — reasoning-skill optimization
 
-`skillopt` searches for **reasoning skills** (instruction prompts, optionally with few-shot demos) that make a
-**fixed** target LLM (default: Qwen3-8B) stay accurate while spending fewer tokens — thinking tokens included —
-across a list of benchmarks. The research algorithm is ONE class you write (an `Optimizer`); the framework only
-evaluates its prompts, hands back the results and saves everything. It never scores, ranks or selects.
+## Overview
+
+`skillopt` searches for **reasoning skills** (instruction prompts) that keep a **fixed** target LLM
+(default: Qwen3-8B) accurate while spending fewer tokens, thinking included, on GSM8K and BBH.
+
+- **You write** one `Optimizer` class: it proposes prompts and updates them from the results.
+- **The framework** evaluates each prompt on each benchmark (accuracy and tokens), returns the results and saves
+  everything. It never scores, ranks or selects.
 
 ```mermaid
 flowchart TD
@@ -12,6 +16,23 @@ flowchart TD
     U -->|new prompts| E
     U -->|"[] or max_iterations"| S([stop])
 ```
+
+## Requirements
+
+- **Python** >= 3.10
+- **GPU** (real runs only): one GPU with 24 GB VRAM for Qwen3-8B. `--mock` needs no GPU.
+
+| Install | Packages | Needed for |
+|---|---|---|
+| `pip install -e .` | `pyyaml` | always (core) |
+| `pip install -e .[dev]` | + `pytest` | tests; `--mock` runs |
+| `pip install -e .[data]` | + `datasets` | downloading GSM8K / BBH from Hugging Face (`source: hf`) |
+| `pip install -e .[vllm]` | + `vllm` | default presets `*-vllm` (Linux or WSL2, CUDA GPU) |
+| `pip install -e .[hf]` | + `torch`, `transformers`, `accelerate`, `bitsandbytes` | presets `qwen3-8b-hf` / `qwen3-8b-hf-4bit` |
+
+- Default real run (`python run.py`): `pip install -e .[vllm,data]`.
+- `qwen3-8b-server` / `openai-api` use only the standard library (an OpenAI-compatible HTTP endpoint).
+- Heavy packages are imported lazily, so a missing extra fails only when that backend or data source is used.
 
 ## The Optimizer interface
 
