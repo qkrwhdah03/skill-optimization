@@ -55,9 +55,11 @@ SkillEvaluation       skill, skill_id, split, results
   results[bench]  ->  EvalResult
                         n, accuracy, failures(k), items
                         avg_input_tokens, avg_output_tokens, avg_reasoning_tokens, avg_total_tokens, avg_latency
+                        num_truncated, truncation_rate
 ```
 
-`avg_output_tokens` includes thinking. Each item keeps the question, prediction, gold, correctness, usage and texts.
+`avg_output_tokens` includes thinking. Each item keeps the question, prediction, gold, correctness, usage, texts
+and `truncated` (the generation hit `max_tokens`).
 
 ## Config
 

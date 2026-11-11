@@ -49,8 +49,16 @@ class Benchmark(ABC):
     def load(self, split: str) -> list[Example]:
         ...
 
+    def answer_format_for(self, example: Example) -> str:
+        """Answer-format line for ``example`` (default: the class-wide ``answer_format``)."""
+        return self.answer_format
+
     def build_prompt(self, skill: Skill, example: Example) -> str:
-        return render_prompt(skill, example.question, self.answer_format)
+        return render_prompt(skill, example.question, self.answer_format_for(example))
+
+    def extract_answer_for(self, text: str, example: Example) -> str | None:
+        """Extract the answer for ``example`` (default: ``extract_answer(text)``, example-independent)."""
+        return self.extract_answer(text)
 
     @abstractmethod
     def extract_answer(self, text: str) -> str | None:

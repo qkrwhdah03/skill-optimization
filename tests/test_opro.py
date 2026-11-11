@@ -203,3 +203,195 @@ def test_update_with_few_shot_parent_runs():
     results = [_ev("best", 1.0, 1.0, "Best.", few_shot=fs), _ev("worse", 0.0, 0.0, "Worse.")]
     out = o.update(results, [])
     assert [s.instruction for s in out] == ["Short."]
+
+
+# --- loop 2026-11-11-003: bounded retries on empty / duplicate / truncated --------
+
+import logging  # noqa: E402
+
+from helpers import uniq  # noqa: E402
+from skillopt.llm import BaseLLM, RawGeneration, register_llm  # noqa: E402
+
+OPRO_LOGGER = "skillopt.optimizer.algorithms.opro"
+
+
+def _warnings(caplog):
+    return [r for r in caplog.records if r.name == OPRO_LOGGER and r.levelno == logging.WARNING]
+
+
+class _ScriptedLLM(BaseLLM):
+    """Returns scripted (text, truncated) pairs in order."""
+
+    uses_gpu = False
+
+    def __init__(self, config, role="default"):
+        super().__init__(config, role=role)
+        self.script = []
+        self.calls = []
+
+    def _generate(self, prompt, gen):
+        self.calls.append(prompt)
+        text, truncated = self.script.pop(0)
+        return RawGeneration(text=text, truncated=truncated)
+
+    def count_tokens(self, text):
+        return len(text.split())
+
+
+_SCRIPTED = uniq("scripted")
+register_llm(_SCRIPTED)(_ScriptedLLM)
+
+
+def test_max_retries_default_and_params():
+    _, o = _opt(["<skill>x</skill>"])
+    assert o.max_retries == 2
+    assert o.params["max_retries"] == 2
+    _, o3 = _opt(["<skill>x</skill>"], max_retries=5)
+    assert o3.max_retries == 5
+    assert o3.params["max_retries"] == 5
+
+
+def test_build_optimizer_max_retries_zero():
+    llm = make_mock(["<skill>x</skill>"], role="optimizer")
+    o = build_optimizer({"name": "opro", "max_retries": 0}, llm)
+    assert isinstance(o, OPROOptimizer)
+    assert o.max_retries == 0
+
+
+def test_max_retries_negative_raises():
+    llm = make_mock(["<skill>x</skill>"], role="optimizer")
+    with pytest.raises(ValueError):
+        OPROOptimizer(llm, max_retries=-1)
+
+
+def test_retry_on_empty():
+    llm, o = _opt(["", "<skill>Fresh.</skill>"], num_candidates=1)
+    out = o.update(_round0(), [])
+    assert [s.instruction for s in out] == ["Fresh."]
+    assert len(llm.calls) == 2
+    assert llm.usage.snapshot().calls == 2
+
+
+def test_retry_on_duplicate():
+    llm, o = _opt(["<skill>Answer directly ALPHA.</skill>", "<skill>Fresh.</skill>"], num_candidates=1)
+    out = o.update(_round0(), [])
+    assert [s.instruction for s in out] == ["Fresh."]
+    assert len(llm.calls) == 2
+
+
+def test_retry_on_truncated():
+    llm, o = _opt(["<think>never closed", "<skill>Fresh.</skill>"], num_candidates=1)
+    out = o.update(_round0(), [])
+    assert [s.instruction for s in out] == ["Fresh."]
+    assert len(llm.calls) == 2
+
+
+def test_truncated_with_complete_skill_block_accepted():
+    llm = _ScriptedLLM({"backend": _SCRIPTED, "model": "scripted"}, role="optimizer")
+    llm.script = [("<skill>Complete X.</skill> and then trailing", True)]
+    o = OPROOptimizer(llm, num_candidates=1)
+    out = o.update(_round0(), [])
+    assert [s.instruction for s in out] == ["Complete X."]
+    assert len(llm.calls) == 1
+
+
+def test_truncated_without_skill_block_rejected_and_retried():
+    llm = _ScriptedLLM({"backend": _SCRIPTED, "model": "scripted"}, role="optimizer")
+    llm.script = [("A partial instruction that got cut", True), ("<skill>Fresh.</skill>", False)]
+    o = OPROOptimizer(llm, num_candidates=1)
+    out = o.update(_round0(), [])
+    assert [s.instruction for s in out] == ["Fresh."]
+    assert len(llm.calls) == 2
+
+
+def test_retries_bounded_all_duplicates():
+    llm, o = _opt(["<skill>Answer directly ALPHA.</skill>"], num_candidates=1, max_retries=2)
+    assert o.update(_round0(), []) == []
+    assert len(llm.calls) == 3
+
+
+def test_max_retries_zero_one_call_per_candidate():
+    llm, o = _opt(["<skill>Answer directly ALPHA.</skill>"], num_candidates=2, max_retries=0)
+    assert o.update(_round0(), []) == []
+    assert len(llm.calls) == 2
+
+
+def test_num_candidates_zero_no_calls_no_warning(caplog):
+    caplog.set_level(logging.INFO, logger="skillopt")
+    llm, o = _opt(["<skill>x</skill>"], num_candidates=0)
+    assert o.update(_round0(), []) == []
+    assert llm.calls == []
+    assert _warnings(caplog) == []
+
+
+def test_warning_when_fewer_candidates(caplog):
+    caplog.set_level(logging.INFO, logger="skillopt")
+    # slot 0: accepted; slot 1: empty, duplicate (seen), duplicate (proposed this round)
+    llm, o = _opt(["<skill>Fresh.</skill>", "", "<skill>Answer directly ALPHA.</skill>",
+                   "<skill>Fresh.</skill>"], num_candidates=2, max_retries=2)
+    out = o.update(_round0(), [])
+    assert [s.instruction for s in out] == ["Fresh."]
+    assert len(llm.calls) == 4
+    warns = _warnings(caplog)
+    assert len(warns) == 1
+    msg = warns[0].getMessage()
+    assert "1/2" in msg
+    assert "empty=1" in msg
+    assert "duplicate=2" in msg
+    assert "truncated=0" in msg
+    assert "stops the loop" not in msg
+
+
+def test_warning_counts_truncated(caplog):
+    caplog.set_level(logging.INFO, logger="skillopt")
+    llm, o = _opt(["<skill>Fresh.</skill>", "<think>cut one", "<think>cut two", "<think>cut three"],
+                  num_candidates=2, max_retries=2)
+    out = o.update(_round0(), [])
+    assert [s.instruction for s in out] == ["Fresh."]
+    warns = _warnings(caplog)
+    assert len(warns) == 1
+    msg = warns[0].getMessage()
+    assert "1/2" in msg
+    assert "truncated=3" in msg
+    assert "empty=0" in msg
+    assert "duplicate=0" in msg
+
+
+def test_warning_when_empty_list_stops_loop(caplog):
+    caplog.set_level(logging.INFO, logger="skillopt")
+    _, o = _opt(["<skill>Answer directly ALPHA.</skill>"], num_candidates=1, max_retries=2)
+    assert o.update(_round0(), []) == []
+    warns = _warnings(caplog)
+    assert len(warns) == 1
+    msg = warns[0].getMessage()
+    assert "0/1" in msg
+    assert "duplicate=3" in msg
+    assert "stops the loop" in msg
+
+
+def test_no_warning_when_all_candidates_produced(caplog):
+    caplog.set_level(logging.INFO, logger="skillopt")
+    _, o = _opt(["<skill>A</skill>", "<skill>B</skill>"])
+    assert len(o.update(_round0(), [])) == 2
+    assert _warnings(caplog) == []
+
+
+def test_ids_by_slot_with_retries():
+    _, o = _opt(["", "<skill>A</skill>", "<skill>B</skill>"], num_candidates=2)
+    out = o.update(_round0(), [])
+    assert [s.id for s in out] == ["opro-i1-c0", "opro-i1-c1"]
+    assert [s.instruction for s in out] == ["A", "B"]
+
+
+def test_ids_keep_slot_index_when_a_slot_fails():
+    _, o = _opt(["", "<skill>B</skill>"], num_candidates=2, max_retries=0)
+    out = o.update(_round0(), [])
+    assert [s.id for s in out] == ["opro-i1-c1"]
+    assert [s.instruction for s in out] == ["B"]
+
+
+def test_collision_suffix_unchanged_with_retries():
+    _, o = _opt(["", "<skill>Brand new.</skill>"], num_candidates=1)
+    results = _round0() + [_ev("opro-i1-c0", 0.5, 0.5, "Old opro.")]
+    out = o.update(results, [])
+    assert [s.id for s in out] == ["opro-i1-c0-2"]

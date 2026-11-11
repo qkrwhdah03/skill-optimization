@@ -204,3 +204,21 @@ def test_gsm8k_default_sizes():
 def test_gsm8k_old_kwargs_type_error(kw):
     with pytest.raises(TypeError):
         GSM8K(source="local", data_dir="data/sample/gsm8k", **kw)
+
+
+# --- loop 2026-11-11-003: answer format without angle brackets ----------------
+
+def test_gsm8k_answer_format_has_no_angle_brackets():
+    fmt = GSM8K.answer_format
+    assert "<" not in fmt and ">" not in fmt
+    assert "The answer is" in fmt
+
+
+def test_gsm8k_extract_answer_inside_answer_tag(bench):
+    assert bench.extract_answer("... The answer is <answer>42</answer>.") == "42"
+
+
+def test_gsm8k_build_prompt_uses_answer_format(bench):
+    ex = bench.load("train")[0]
+    assert bench.answer_format_for(ex) == GSM8K.answer_format
+    assert GSM8K.answer_format in bench.build_prompt(get_baseline("cot"), ex)

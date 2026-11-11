@@ -19,7 +19,8 @@ from skillopt.evaluator import (
 THINK_RESP = "<think>a b c</think>The answer is 3."
 
 EVAL_SUMMARY_KEYS = {"skill_id", "benchmark", "split", "n", "accuracy", "avg_input_tokens",
-                     "avg_output_tokens", "avg_reasoning_tokens", "avg_total_tokens", "avg_latency"}
+                     "avg_output_tokens", "avg_reasoning_tokens", "avg_total_tokens", "avg_latency",
+                     "num_truncated", "truncation_rate"}
 
 
 class ListBench(Benchmark):
@@ -737,3 +738,142 @@ def test_skill_evaluation_no_aggregate_attrs_on_list_result():
         s = e.summary()
         assert set(s) == {"skill_id", "split", "benchmarks"}
         assert s["benchmarks"] == {k: r.summary() for k, r in e.results.items()}
+
+
+# --- loop 2026-11-11-003: truncation fields, per-example hooks -------------------
+
+_ITEM_KEYS_BEFORE = {"example_id", "prediction", "gold", "correct", "usage", "latency",
+                     "response_text", "reasoning_text", "question"}
+
+
+def test_item_result_truncated_field_default_and_order():
+    import dataclasses
+
+    from skillopt.evaluator import ItemResult
+    from skillopt.llm import TokenUsage
+
+    names = [f.name for f in dataclasses.fields(ItemResult)]
+    assert "truncated" in names
+    assert names.index("truncated") == names.index("question") + 1
+    it = ItemResult("e", "1", "1", True, TokenUsage(), 0.0, "r", "")
+    assert it.truncated is False
+    d = it.to_dict()
+    assert set(d) == _ITEM_KEYS_BEFORE | {"truncated"}
+    assert d["truncated"] is False
+    it2 = ItemResult("e", "1", "1", True, TokenUsage(), 0.0, "r", "", "Q?", True)
+    assert it2.question == "Q?"
+    assert it2.to_dict()["truncated"] is True
+
+
+def test_eval_result_truncation_counts():
+    r = make_result("s", n=4, n_correct=2)
+    r.items[0].truncated = True
+    r.items[3].truncated = True
+    assert r.num_truncated == 2
+    assert r.truncation_rate == pytest.approx(0.5)
+    s = r.summary()
+    assert s["num_truncated"] == 2
+    assert s["truncation_rate"] == pytest.approx(0.5)
+
+
+def test_eval_result_truncation_zero_items():
+    r = EvalResult(skill_id="s", benchmark="b", split="train", items=[])
+    assert r.num_truncated == 0
+    assert r.truncation_rate == 0.0
+    s = r.summary()
+    assert s["num_truncated"] == 0
+    assert s["truncation_rate"] == 0.0
+
+
+def test_eval_result_summary_previous_values_unchanged():
+    r = make_result("s", n=4, n_correct=1, output_tokens=10, input_tokens=5)
+    s = r.summary()
+    assert set(s) == EVAL_SUMMARY_KEYS
+    assert s["skill_id"] == "s" and s["benchmark"] == "testbench" and s["split"] == "train"
+    assert s["n"] == 4
+    assert s["accuracy"] == pytest.approx(0.25)
+    assert s["avg_input_tokens"] == pytest.approx(5)
+    assert s["avg_output_tokens"] == pytest.approx(10)
+    assert s["avg_reasoning_tokens"] == pytest.approx(0)
+    assert s["avg_total_tokens"] == pytest.approx(15)
+    assert s["avg_latency"] == pytest.approx(0.01)
+    assert s["num_truncated"] == 0
+    assert s["truncation_rate"] == 0.0
+
+
+def test_evaluate_split_copies_truncated_flag():
+    _, ev = _eval(["3", "3"], responses=["<think>long never closed", "3"])
+    res = ev.evaluate_split(get_baseline("cot"), "lb", "train")
+    assert [it.truncated for it in res.items] == [True, False]
+    assert res.num_truncated == 1
+    assert res.truncation_rate == pytest.approx(0.5)
+    assert [it.to_dict()["truncated"] for it in res.items] == [True, False]
+
+
+class _ForBench(ListBench):
+    """Overrides the per-example hooks and records what it received."""
+
+    def __init__(self, golds=(), **kw):
+        super().__init__(golds, **kw)
+        self.seen = []
+
+    def answer_format_for(self, example):
+        return f"FORMAT-FOR-{example.id}"
+
+    def extract_answer_for(self, text, example):
+        self.seen.append(example)
+        return example.answer  # always "correct"
+
+
+def test_extract_answer_default_hook_delegates():
+    b = ListBench(["7"])
+    ex = b.load("train")[0]
+    assert b.extract_answer_for("the answer is 7", ex) == "7"
+    assert b.extract_answer_for("nothing", ex) is None
+
+
+def test_answer_format_for_default_and_build_prompt():
+    b = ListBench(["7"])
+    ex = b.load("train")[0]
+    assert b.answer_format_for(ex) == ListBench.answer_format
+    assert ListBench.answer_format in b.build_prompt(get_baseline("cot"), ex)
+
+
+def test_build_prompt_uses_answer_format_for_override():
+    b = _ForBench(["7"])
+    ex = b.load("train")[0]
+    prompt = b.build_prompt(get_baseline("cot"), ex)
+    assert "FORMAT-FOR-ex0" in prompt
+    assert ListBench.answer_format not in prompt
+
+
+def test_evaluator_uses_extract_answer_for_with_example():
+    b = _ForBench(["11", "12"])
+    mock = make_mock(["no number here"])
+    ev = Evaluator(mock, [BenchmarkSpec(key="fb", benchmark=b)])
+    res = ev.evaluate_split(get_baseline("cot"), "fb", "train")
+    assert [e.id for e in b.seen] == ["ex0", "ex1"]
+    assert all(isinstance(e, Example) for e in b.seen)
+    assert [it.prediction for it in res.items] == ["11", "12"]
+    assert res.accuracy == pytest.approx(1.0)
+    assert all("FORMAT-FOR-" in p for p in mock.calls)
+
+
+def test_evaluator_custom_benchmark_with_only_extract_answer_still_works():
+    _, ev = _eval(["3", "4"])
+    res = ev.evaluate_split(get_baseline("cot"), "lb", "train")
+    assert [it.prediction for it in res.items] == ["3", "3"]
+    assert [it.correct for it in res.items] == [True, False]
+
+
+def test_evaluator_bbh_sample_answer_tag_option_scored_correct():
+    mock = make_mock(["So the answer is <answer>(F)</answer>."])
+    ev = Evaluator(mock, build_benchmark_specs({"bbh": _bbh_entry()}, seed=0))
+    hits = []
+    for split in ("train", "val", "test"):
+        res = ev.evaluate_split(get_baseline("cot"), "bbh", split)
+        hits += [it for it in res.items if it.example_id.startswith("date_understanding") and it.gold == "f"]
+    assert hits, "expected a date_understanding sample with gold (F)"
+    for it in hits:
+        assert it.prediction == "f"
+        assert it.correct is True

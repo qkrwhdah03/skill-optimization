@@ -16,7 +16,8 @@ from skillopt.llm import BaseLLM, VRAMBudgetError
 CONFIG = CONFIGS / "config.yaml"
 SNAPSHOT_KEYS = {"calls", "input_tokens", "output_tokens", "reasoning_tokens", "total_tokens", "latency"}
 EVAL_SUMMARY_KEYS = {"skill_id", "benchmark", "split", "n", "accuracy", "avg_input_tokens",
-                     "avg_output_tokens", "avg_reasoning_tokens", "avg_total_tokens", "avg_latency"}
+                     "avg_output_tokens", "avg_reasoning_tokens", "avg_total_tokens", "avg_latency",
+                     "num_truncated", "truncation_rate"}
 BENCH_KEYS = ["gsm8k", "bbh"]
 OPRO = "optimizer.name=opro"
 
@@ -635,3 +636,28 @@ def test_mock_overrides_without_benchmarks():
     raw.pop("benchmarks", None)
     ovs = mock_overrides(raw)
     assert isinstance(ovs, list)
+
+
+# --- loop 2026-11-11-003: truncation fields in saved outputs ----------------------
+
+ITEM_ROW_KEYS = {"example_id", "prediction", "gold", "correct", "usage", "latency",
+                 "response_text", "reasoning_text", "question", "truncated"}
+
+
+def test_saved_outputs_include_truncation_fields(opro_run):
+    _, run = opro_run
+    checked = 0
+    for rnd in _rounds(run):
+        for key in BENCH_KEYS:
+            for jl in (run / "rounds" / rnd / "results" / key).glob("*.jsonl"):
+                rows = read_jsonl(jl)
+                for row in rows:
+                    assert ITEM_ROW_KEYS <= set(row), (jl, set(row))
+                    assert isinstance(row["truncated"], bool)
+                sm = read_json(jl.with_name(jl.name[: -len(".jsonl")] + ".summary.json"))
+                assert EVAL_SUMMARY_KEYS <= set(sm)
+                assert sm["num_truncated"] == sum(1 for r in rows if r["truncated"])
+                expected_rate = sm["num_truncated"] / sm["n"] if sm["n"] else 0.0
+                assert sm["truncation_rate"] == pytest.approx(expected_rate)
+                checked += 1
+    assert checked

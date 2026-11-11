@@ -49,6 +49,7 @@ class RawGeneration:
     output_tokens: int | None = None  # reported count INCLUDING reasoning
     reasoning_tokens: int | None = None
     raw: Any = None
+    truncated: bool = False  # True = generation stopped because it hit max_tokens
 
 
 @dataclass
@@ -58,6 +59,7 @@ class LLMResponse:
     usage: TokenUsage
     latency: float
     raw: Any = None
+    truncated: bool = False  # True = generation stopped because it hit max_tokens
 
 
 @dataclass
@@ -188,7 +190,12 @@ class BaseLLM(ABC):
         usage = self._usage_from_raw(raw, prompt)
         self._record(usage, latency)
         return LLMResponse(
-            text=raw.text, reasoning_text=raw.reasoning_text, usage=usage, latency=latency, raw=raw.raw
+            text=raw.text,
+            reasoning_text=raw.reasoning_text,
+            usage=usage,
+            latency=latency,
+            raw=raw.raw,
+            truncated=bool(raw.truncated),
         )
 
     def generate_batch(self, prompts: list[str], **gen_kwargs) -> list[LLMResponse]:
@@ -215,6 +222,7 @@ class BaseLLM(ABC):
                     usage=usage,
                     latency=latency,
                     raw=raw.raw,
+                    truncated=bool(raw.truncated),
                 )
             )
         return out

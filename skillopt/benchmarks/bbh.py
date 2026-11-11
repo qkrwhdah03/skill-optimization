@@ -76,6 +76,162 @@ _ANSWER_IS_RE = re.compile(r"answer is", re.IGNORECASE)
 _OPTION_RE = re.compile(r"^\(([a-z])\)$")
 _WRAP_CHARS = "\"'`*"
 
+_MULTIPLE_CHOICE = "multiple_choice"
+_BINARY = "binary"
+_NUMERIC = "numeric"
+_DYCK = "dyck"
+_WORD_SORTING = "word_sorting"
+_FREE_FORM = "free_form"
+
+BBH_TASK_KINDS: dict[str, str] = {
+    "boolean_expressions": _BINARY,
+    "causal_judgement": _BINARY,
+    "date_understanding": _MULTIPLE_CHOICE,
+    "disambiguation_qa": _MULTIPLE_CHOICE,
+    "dyck_languages": _DYCK,
+    "formal_fallacies": _BINARY,
+    "geometric_shapes": _MULTIPLE_CHOICE,
+    "hyperbaton": _MULTIPLE_CHOICE,
+    "logical_deduction_five_objects": _MULTIPLE_CHOICE,
+    "logical_deduction_seven_objects": _MULTIPLE_CHOICE,
+    "logical_deduction_three_objects": _MULTIPLE_CHOICE,
+    "movie_recommendation": _MULTIPLE_CHOICE,
+    "multistep_arithmetic_two": _NUMERIC,
+    "navigate": _BINARY,
+    "object_counting": _NUMERIC,
+    "penguins_in_a_table": _MULTIPLE_CHOICE,
+    "reasoning_about_colored_objects": _MULTIPLE_CHOICE,
+    "ruin_names": _MULTIPLE_CHOICE,
+    "salient_translation_error_detection": _MULTIPLE_CHOICE,
+    "snarks": _MULTIPLE_CHOICE,
+    "sports_understanding": _BINARY,
+    "temporal_sequences": _MULTIPLE_CHOICE,
+    "tracking_shuffled_objects_five_objects": _MULTIPLE_CHOICE,
+    "tracking_shuffled_objects_seven_objects": _MULTIPLE_CHOICE,
+    "tracking_shuffled_objects_three_objects": _MULTIPLE_CHOICE,
+    "web_of_lies": _BINARY,
+    "word_sorting": _WORD_SORTING,
+}
+
+# exact gold word forms of each binary task
+BBH_BINARY_CHOICES: dict[str, tuple[str, str]] = {
+    "boolean_expressions": ("True", "False"),
+    "causal_judgement": ("Yes", "No"),
+    "navigate": ("Yes", "No"),
+    "web_of_lies": ("Yes", "No"),
+    "sports_understanding": ("yes", "no"),
+    "formal_fallacies": ("valid", "invalid"),
+}
+
+_FORMATS: dict[str, str] = {
+    _MULTIPLE_CHOICE: 'End your response with "So the answer is (X)." where X is the letter of the correct option.',
+    _NUMERIC: 'End your response with "So the answer is N." where N is the final number.',
+    _DYCK: (
+        'End your response with "So the answer is" followed by only the closing brackets needed to complete '
+        "the sequence, separated by spaces."
+    ),
+    _WORD_SORTING: 'End your response with "So the answer is" followed by the sorted words separated by single spaces.',
+    _FREE_FORM: 'End your response with "So the answer is" followed by your final answer.',
+}
+
+_BOXED_RE = re.compile(r"\\boxed\{([^{}]*)\}")
+_TAG_RE = re.compile(r"</?[A-Za-z][^<>]*>")
+_PAREN_LETTER_RE = re.compile(r"\(([A-Za-z])\)")
+_LEAD_LETTER_RE = re.compile(r"^([A-Z])(?![A-Za-z0-9])")
+_WORD_RE = re.compile(r"[A-Za-z]+")
+_DIGIT_COMMA_RE = re.compile(r"(?<=\d),(?=\d)")
+_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
+_DYCK_CHARS = set("()[]{}<>")
+_STRIP_CHARS = "_\"'\u201c\u201d\u2018\u2019 \t\r\n\f\v"
+
+
+def _task_kind(task: str | None) -> str:
+    if task is None:
+        return _FREE_FORM
+    return BBH_TASK_KINDS.get(task, _FREE_FORM)
+
+
+def bbh_answer_format(task: str | None) -> str:
+    """Answer-format line for one BBH task (generic free-form line for unknown / None tasks)."""
+    kind = _task_kind(task)
+    if kind == _BINARY:
+        a, b = BBH_BINARY_CHOICES[task]  # type: ignore[index]
+        return f'End your response with "So the answer is {a}." or "So the answer is {b}."'
+    return _FORMATS[kind]
+
+
+def _segment(text: str) -> str:
+    matches = list(_ANSWER_IS_RE.finditer(text))
+    if matches:
+        rest = text[matches[-1].end():].lstrip()
+        if rest.startswith(":"):
+            rest = rest[1:]
+        for line in rest.splitlines():
+            if line.strip():
+                return line.strip()
+        return ""
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    return lines[-1].strip() if lines else ""
+
+
+def _clean_free_form(segment: str, commas_to_spaces: bool) -> str:
+    t = segment.replace("*", "").replace("`", "")
+    prev = None
+    while t != prev:
+        prev = t
+        t = t.strip(_STRIP_CHARS)
+        while t.endswith("."):
+            t = t[:-1]
+    if commas_to_spaces:
+        t = t.replace(",", " ")
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _extract_choice_letter(segment: str) -> str | None:
+    m = _PAREN_LETTER_RE.search(segment)
+    if m:
+        return m.group(1).lower()
+    t = segment.replace("*", "").replace("`", "").strip(_STRIP_CHARS)
+    m = _LEAD_LETTER_RE.match(t)
+    if m:
+        return m.group(1).lower()
+    return None
+
+
+def extract_bbh_answer(text: str | None, task: str | None = None) -> str | None:
+    """Extract a normalized BBH answer from ``text`` using the answer kind of ``task`` (free-form if unknown)."""
+    if text is None or not text.strip():
+        return None
+    segment = _segment(text)
+    segment = _BOXED_RE.sub(lambda m: m.group(1), segment)
+    segment = _TAG_RE.sub(" ", segment)
+    kind = _task_kind(task)
+
+    if kind == _MULTIPLE_CHOICE:
+        value: str | None = _extract_choice_letter(segment)
+    elif kind == _DYCK:
+        value = " ".join(ch for ch in segment if ch in _DYCK_CHARS)
+    else:
+        cleaned = _clean_free_form(segment, commas_to_spaces=(kind == _WORD_SORTING))
+        value = cleaned
+        if kind == _BINARY:
+            m = _WORD_RE.search(cleaned)
+            if m:
+                word = m.group(0).lower()
+                for choice in BBH_BINARY_CHOICES.get(task or "", ()):
+                    if word == choice.lower():
+                        value = choice.lower()
+                        break
+        elif kind == _NUMERIC:
+            m = _NUMBER_RE.search(_DIGIT_COMMA_RE.sub("", cleaned))
+            if m:
+                value = m.group(0)
+
+    if value is None:
+        return None
+    norm = normalize_answer(value)
+    return norm if norm else None
+
 
 def normalize_answer(s: str | None) -> str | None:
     if s is None:
@@ -98,7 +254,7 @@ def normalize_answer(s: str | None) -> str | None:
 @register_benchmark("bbh")
 class BBH(Benchmark):
     name = "bbh"
-    answer_format = 'End your response with "So the answer is <answer>."'
+    answer_format = _FORMATS[_FREE_FORM]
     splits = ("train", "val", "test", "heldout")
 
     def __init__(
@@ -205,18 +361,14 @@ class BBH(Benchmark):
         return out
 
     # ------------------------------------------------------------------ scoring
+    def answer_format_for(self, example: Example) -> str:
+        return bbh_answer_format(example.meta.get("task"))
+
     def extract_answer(self, text: str) -> str | None:
-        if text is None or not text.strip():
-            return None
-        matches = list(_ANSWER_IS_RE.finditer(text))
-        if matches:
-            rest = text[matches[-1].end():]
-            segment = rest.split("\n", 1)[0].strip().lstrip(":").strip()
-        else:
-            lines = [ln for ln in text.splitlines() if ln.strip()]
-            segment = lines[-1] if lines else ""
-        norm = normalize_answer(segment)
-        return norm if norm else None
+        return extract_bbh_answer(text, None)
+
+    def extract_answer_for(self, text: str, example: Example) -> str | None:
+        return extract_bbh_answer(text, example.meta.get("task"))
 
     def score(self, pred: str | None, gold: str) -> bool:
         if pred is None:

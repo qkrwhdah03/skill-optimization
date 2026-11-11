@@ -13,6 +13,7 @@ _ANSWER_IS_RE = re.compile(r"answer is[:\s]*\$?(" + _NUM + r")", re.IGNORECASE)
 _BOXED_RE = re.compile(r"\\boxed\{([^{}]*)\}")
 _HASH_RE = re.compile(r"####\s*\$?(" + _NUM + r")")
 _NUM_RE = re.compile(_NUM)
+_TAG_RE = re.compile(r"</?[A-Za-z][^<>]*>")
 
 
 def normalize_number(s: str | None) -> str | None:
@@ -36,7 +37,7 @@ def normalize_number(s: str | None) -> str | None:
 @register_benchmark("gsm8k")
 class GSM8K(Benchmark):
     name = "gsm8k"
-    answer_format = 'End your response with "The answer is <number>."'
+    answer_format = 'End your response with "The answer is N." where N is the final number.'
     splits = ("train", "val", "test")
 
     def __init__(
@@ -101,6 +102,7 @@ class GSM8K(Benchmark):
     def extract_answer(self, text: str) -> str | None:
         if not text:
             return None
+        text = _TAG_RE.sub(" ", text)  # "The answer is <answer>42</answer>." -> "42"
         m = _ANSWER_IS_RE.findall(text)
         if m:
             return normalize_number(m[-1])

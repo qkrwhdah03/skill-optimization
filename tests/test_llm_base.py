@@ -309,3 +309,75 @@ def test_build_role_llms_distinct_objects_independent_trackers():
     assert optimizer.usage.snapshot().calls == 2
     assert target.role == "target"
     assert optimizer.role == "optimizer"
+
+
+# --- loop 2026-11-11-003: truncation flag ----------------------------------
+
+def test_raw_generation_truncated_defaults_false():
+    r = RawGeneration(text="x")
+    assert r.truncated is False
+    r2 = RawGeneration("t", "r", "p", 1, 2, 0, {"k": 1})
+    assert (r2.text, r2.reasoning_text, r2.prompt_text, r2.input_tokens, r2.output_tokens,
+            r2.reasoning_tokens, r2.raw) == ("t", "r", "p", 1, 2, 0, {"k": 1})
+    assert r2.truncated is False
+    assert RawGeneration(text="x", truncated=True).truncated is True
+
+
+def test_llm_response_truncated_defaults_false():
+    u = TokenUsage(input_tokens=1, output_tokens=2)
+    r = LLMResponse("t", "r", u, 0.5)
+    assert r.truncated is False
+    assert (r.text, r.reasoning_text, r.usage, r.latency, r.raw) == ("t", "r", u, 0.5, None)
+    r2 = LLMResponse("t", "r", u, 0.5, "raw")
+    assert r2.raw == "raw" and r2.truncated is False
+    assert LLMResponse("t", "r", u, 0.5, truncated=True).truncated is True
+
+
+def test_generate_propagates_truncated_flag():
+    llm = _rec()
+    llm.next_raw = RawGeneration(text="x", truncated=True)
+    assert llm.generate("p").truncated is True
+    llm.next_raw = RawGeneration(text="x")
+    assert llm.generate("p").truncated is False
+
+
+class _FlagBatchLLM(BaseLLM):
+    uses_gpu = False
+
+    def __init__(self, config, role="default"):
+        super().__init__(config, role=role)
+        self.flags = []
+
+    def _generate(self, prompt, gen):
+        return RawGeneration(text="x", truncated=self.flags.pop(0))
+
+    def count_tokens(self, text):
+        return len(text.split())
+
+
+def test_generate_batch_preserves_per_prompt_truncated():
+    llm = _FlagBatchLLM({"backend": "flagbatch", "model": "m"})
+    llm.flags = [True, False]
+    out = llm.generate_batch(["a", "b"])
+    assert [r.truncated for r in out] == [True, False]
+    llm.flags = [False, True, True]
+    out = llm.generate_batch(["a", "b", "c"])
+    assert [r.truncated for r in out] == [False, True, True]
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("<think>long never closed", True),
+    ("<think>a</think>The answer is 3.", False),
+    ("The answer is 3.", False),
+])
+def test_mock_truncated_on_unclosed_think(text, expected):
+    llm = make_mock([text])
+    assert llm.generate("q").truncated is expected
+    assert llm.generate_batch(["q"])[0].truncated is expected
+
+
+@pytest.mark.parametrize("thinking", [True, False])
+def test_mock_default_outputs_not_truncated(thinking):
+    llm = make_mock()
+    for i in range(5):
+        assert llm.generate(f"q{i}", enable_thinking=thinking).truncated is False

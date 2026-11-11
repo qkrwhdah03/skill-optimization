@@ -6,7 +6,7 @@ from typing import Any
 from .base import BaseLLM, RawGeneration
 from .registry import register_llm
 from .resources import engine_key, get_or_create_engine
-from .thinking import split_thinking
+from .thinking import render_chat_prompt, split_thinking
 
 _SAMPLING_KEYS = ("temperature", "top_p", "top_k", "max_tokens", "seed")
 
@@ -34,20 +34,7 @@ class VLLMBackend(BaseLLM):
         return self._engine().get_tokenizer()
 
     def _render(self, prompt: str, gen: dict) -> str:
-        tok = self._tokenizer()
-        messages = [{"role": "user", "content": prompt}]
-        enable_thinking = bool(gen.get("enable_thinking", True))
-        try:
-            return tok.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-                chat_template_kwargs={"enable_thinking": enable_thinking},
-            )
-        except TypeError:
-            return tok.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True, enable_thinking=enable_thinking
-            )
+        return render_chat_prompt(self._tokenizer(), prompt, bool(gen.get("enable_thinking", True)))
 
     def _sampling_params(self, gen: dict) -> Any:
         from vllm import SamplingParams  # lazy heavy import
@@ -75,6 +62,7 @@ class VLLMBackend(BaseLLM):
                     output_tokens=len(completion.token_ids or []),
                     reasoning_tokens=None,
                     raw=completion.text,
+                    truncated=(getattr(completion, "finish_reason", None) == "length"),
                 )
             )
         return results

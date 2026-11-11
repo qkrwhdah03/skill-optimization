@@ -5,9 +5,15 @@ instructions (per benchmark) and failures of the best one, and asks for better i
 
 Ranking is THIS algorithm's own choice (not the framework's): mean accuracy desc, then mean avg_output_tokens asc,
 both averaged over benchmarks with ``n > 0``.
+
+Each of the ``num_candidates`` slots gets up to ``1 + max_retries`` generations; an attempt is rejected when it is
+empty, a duplicate of a known instruction, or truncated (hit max_tokens) without a complete ``<skill>`` block.
+Rejections are logged at DEBUG; if fewer than ``num_candidates`` prompts are produced, one WARNING summarizes why
+(an empty result stops the loop).
 """
 from __future__ import annotations
 
+import logging
 import re
 
 from skillopt.baselines import get_baseline
@@ -17,6 +23,8 @@ from skillopt.optimizer.base import Optimizer, register_optimizer
 from skillopt.skills import FewShotExample, Skill
 
 _SKILL_RE = re.compile(r"<skill>(.*?)</skill>", re.DOTALL | re.IGNORECASE)
+
+logger = logging.getLogger(__name__)
 
 
 def _means(ev: SkillEvaluation) -> tuple[float, float]:
@@ -44,8 +52,11 @@ class OPROOptimizer(Optimizer):
         top_k: int = 5,
         num_failures: int = 3,
         max_trace_chars: int = 600,
+        max_retries: int = 2,
         **gen_kwargs,
     ) -> None:
+        if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 0:
+            raise ValueError(f"max_retries must be an int >= 0, got {max_retries!r}")
         super().__init__(
             llm,
             initial=list(initial),
@@ -53,6 +64,7 @@ class OPROOptimizer(Optimizer):
             top_k=top_k,
             num_failures=num_failures,
             max_trace_chars=max_trace_chars,
+            max_retries=max_retries,
             **gen_kwargs,
         )
         self.initial = list(initial)
@@ -60,6 +72,7 @@ class OPROOptimizer(Optimizer):
         self.top_k = int(top_k)
         self.num_failures = int(num_failures)
         self.max_trace_chars = int(max_trace_chars)
+        self.max_retries = max_retries
         self.gen_kwargs = dict(gen_kwargs)
 
     def initial_prompts(self) -> list[Skill]:
@@ -120,26 +133,57 @@ class OPROOptimizer(Optimizer):
         seen = {ev.skill.instruction.strip() for ev in evals}
         used_ids = {ev.skill_id for ev in evals}
         proposals: list[Skill] = []
+        rejected = {"empty": 0, "duplicate": 0, "truncated": 0}
+        attempts = 0
         for k in range(self.num_candidates):
-            resp = self.llm.generate(meta_prompt, **self.gen_kwargs)
-            instruction = self._parse(resp.text)
-            if not instruction or instruction in seen:
-                continue
-            seen.add(instruction)
-            base_id = f"opro-i{iteration}-c{k}"
-            sid, n = base_id, 1
-            while sid in used_ids:
-                n += 1
-                sid = f"{base_id}-{n}"
-            used_ids.add(sid)
-            few_shot = [FewShotExample(question=fs.question, answer=fs.answer) for fs in best.few_shot] if best else []
-            proposals.append(
-                Skill(
-                    id=sid,
-                    instruction=instruction,
-                    few_shot=few_shot,
-                    parent_id=best.id if best else None,
-                    metadata={"optimizer": "opro", "iteration": iteration, "optimizer_model": self.llm.model},
+            for attempt in range(1 + self.max_retries):
+                attempts += 1
+                resp = self.llm.generate(meta_prompt, **self.gen_kwargs)
+                blocks = _SKILL_RE.findall(resp.text or "")
+                reason = None
+                instruction = ""
+                if blocks:
+                    instruction = blocks[-1].strip()
+                elif resp.truncated:
+                    reason = "truncated"
+                else:
+                    instruction = self._parse(resp.text)
+                if reason is None:
+                    if not instruction:
+                        reason = "empty"
+                    elif instruction in seen:
+                        reason = "duplicate"
+                if reason is not None:
+                    rejected[reason] += 1
+                    logger.debug(f"update round {iteration}: candidate {k} attempt {attempt + 1} rejected ({reason})")
+                    continue
+                seen.add(instruction)
+                base_id = f"opro-i{iteration}-c{k}"
+                sid, n = base_id, 1
+                while sid in used_ids:
+                    n += 1
+                    sid = f"{base_id}-{n}"
+                used_ids.add(sid)
+                few_shot = (
+                    [FewShotExample(question=fs.question, answer=fs.answer) for fs in best.few_shot] if best else []
                 )
+                proposals.append(
+                    Skill(
+                        id=sid,
+                        instruction=instruction,
+                        few_shot=few_shot,
+                        parent_id=best.id if best else None,
+                        metadata={"optimizer": "opro", "iteration": iteration, "optimizer_model": self.llm.model},
+                    )
+                )
+                break
+        if len(proposals) < self.num_candidates:
+            msg = (
+                f"update round {iteration}: {len(proposals)}/{self.num_candidates} new prompts after {attempts} "
+                f"generations (rejected: empty={rejected['empty']}, duplicate={rejected['duplicate']}, "
+                f"truncated={rejected['truncated']})"
             )
+            if not proposals:
+                msg += "; returning [] stops the loop"
+            logger.warning(msg)
         return proposals

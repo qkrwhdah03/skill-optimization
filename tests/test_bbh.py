@@ -200,3 +200,231 @@ def test_bbh_heldout_none_is_empty():
 def test_bbh_old_kwargs_type_error(kw):
     with pytest.raises(TypeError):
         BBH(source="local", data_dir="data/sample/bbh", **kw)
+
+
+# --- loop 2026-11-11-003: per-task answer formats and extraction -----------------
+
+from skillopt.baselines import get_baseline  # noqa: E402
+from skillopt.benchmarks import Example  # noqa: E402
+from skillopt.benchmarks.bbh import (  # noqa: E402
+    BBH_BINARY_CHOICES,
+    BBH_TASK_KINDS,
+    bbh_answer_format,
+    extract_bbh_answer,
+)
+
+_KINDS = {"multiple_choice", "binary", "numeric", "dyck", "word_sorting"}
+_BINARY = {"boolean_expressions": ("True", "False"), "causal_judgement": ("Yes", "No"),
+           "navigate": ("Yes", "No"), "web_of_lies": ("Yes", "No"),
+           "sports_understanding": ("yes", "no"), "formal_fallacies": ("valid", "invalid")}
+_NUMERIC = {"object_counting", "multistep_arithmetic_two"}
+_MC_TASKS = [t for t in BBH_TASKS
+             if t not in _BINARY and t not in _NUMERIC and t not in ("dyck_languages", "word_sorting")]
+
+
+def _tasks_of(kind):
+    return [t for t in BBH_TASKS if BBH_TASK_KINDS[t] == kind]
+
+
+def test_bbh_task_kinds_cover_all_tasks():
+    assert set(BBH_TASK_KINDS) == set(BBH_TASKS)
+    assert len(BBH_TASK_KINDS) == 27
+    assert set(BBH_TASK_KINDS.values()) <= _KINDS
+    counts = Counter(BBH_TASK_KINDS.values())
+    assert counts == {"multiple_choice": 17, "binary": 6, "numeric": 2, "dyck": 1, "word_sorting": 1}
+    assert set(_tasks_of("binary")) == set(_BINARY)
+    assert set(_tasks_of("numeric")) == _NUMERIC
+    assert _tasks_of("dyck") == ["dyck_languages"]
+    assert _tasks_of("word_sorting") == ["word_sorting"]
+    assert _tasks_of("multiple_choice") == _MC_TASKS
+
+
+def test_bbh_binary_choices_exact():
+    assert BBH_BINARY_CHOICES == _BINARY
+
+
+@pytest.mark.parametrize("task", list(BBH_TASKS) + [None, "not_a_bbh_task"])
+def test_bbh_answer_format_properties(task):
+    fmt = bbh_answer_format(task)
+    assert isinstance(fmt, str) and fmt
+    assert "<" not in fmt and ">" not in fmt
+    assert "So the answer is" in fmt
+    assert "\n" not in fmt
+
+
+@pytest.mark.parametrize("task", _MC_TASKS)
+def test_bbh_answer_format_multiple_choice(task):
+    fmt = bbh_answer_format(task)
+    assert "(X)" in fmt
+    assert "option" in fmt.lower()
+
+
+@pytest.mark.parametrize("task", sorted(_BINARY))
+def test_bbh_answer_format_binary(task):
+    a, b = _BINARY[task]
+    fmt = bbh_answer_format(task)
+    assert f'"So the answer is {a}."' in fmt
+    assert f'"So the answer is {b}."' in fmt
+    assert "(X)" not in fmt
+
+
+@pytest.mark.parametrize("task", sorted(_NUMERIC))
+def test_bbh_answer_format_numeric(task):
+    assert "number" in bbh_answer_format(task).lower()
+
+
+def test_bbh_answer_format_dyck_and_word_sorting():
+    dyck = bbh_answer_format("dyck_languages")
+    assert "closing brackets" in dyck
+    assert "spaces" in dyck
+    assert "sorted words" in bbh_answer_format("word_sorting")
+
+
+def test_bbh_unknown_task_format_is_free_form():
+    assert bbh_answer_format("not_a_bbh_task") == bbh_answer_format(None)
+
+
+def test_bbh_class_answer_format_is_free_form():
+    assert BBH.answer_format == bbh_answer_format(None)
+
+
+def _train_example(b, task):
+    for e in b.load("train"):
+        if e.meta["task"] == task:
+            return e
+    raise AssertionError(f"no {task} example in train")
+
+
+def test_bbh_build_prompt_uses_per_task_format(bench):
+    du = _train_example(bench, "date_understanding")
+    be = _train_example(bench, "boolean_expressions")
+    skill = get_baseline("cot")
+    p_du = bench.build_prompt(skill, du)
+    p_be = bench.build_prompt(skill, be)
+    assert bench.answer_format_for(du) == bbh_answer_format("date_understanding")
+    assert bench.answer_format_for(be) == bbh_answer_format("boolean_expressions")
+    assert bbh_answer_format("date_understanding") in p_du
+    assert bbh_answer_format("boolean_expressions") in p_be
+    assert '"So the answer is True."' in p_be
+    assert "(X)" in p_du
+
+
+MC_CASES = [
+    ("So the answer is (A).", "a"),
+    ("So the answer is A.", "a"),
+    ("So the answer is <answer>(B)</answer>.", "b"),
+    ("So the answer is **(C)**", "c"),
+    ("So the answer is (F) 07/31/2021.", "f"),
+    ("So the answer is:\n(D)", "d"),
+    ("The answer is (A) at first, but on reflection the answer is (E)", "e"),
+    ("So the answer is about time.", None),
+    ("So the answer is a dog.", None),
+    ("", None),
+    (None, None),
+]
+
+BINARY_CASES = [
+    ("boolean_expressions", "So the answer is <answer>True</answer>.", "true"),
+    ("web_of_lies", "So the answer is Yes, Dan tells the truth.", "yes"),
+    ("sports_understanding", "So the answer is no.", "no"),
+    ("formal_fallacies", "So the answer is **invalid**.", "invalid"),
+    ("causal_judgement", "Thinking about causation here.\nNo", "no"),
+]
+
+NUMERIC_CASES = [
+    ("object_counting", "So the answer is 7.", "7"),
+    ("object_counting", "So the answer is <answer>1,234</answer>.", "1234"),
+    ("multistep_arithmetic_two", "So the answer is -42.", "-42"),
+    ("multistep_arithmetic_two", "So the answer is \\boxed{15}.", "15"),
+]
+
+DYCK_CASES = [
+    ("So the answer is ] ) }.", "] ) }"),
+    ("So the answer is <answer>])}</answer>", "] ) }"),
+    ("So the answer is > ]", "> ]"),
+]
+
+WORD_CASES = [
+    ("So the answer is apple, banana, cherry.", "apple banana cherry"),
+    ('So the answer is "apple  banana cherry"', "apple banana cherry"),
+]
+
+FREE_CASES = [
+    ("So the answer is (B).", "b"),
+    ("So the answer is <answer>True</answer>.", "true"),
+    ("", None),
+]
+
+
+@pytest.mark.parametrize("text,expected", MC_CASES)
+def test_extract_bbh_multiple_choice(text, expected):
+    assert extract_bbh_answer(text, "date_understanding") == expected
+
+
+@pytest.mark.parametrize("task,text,expected", BINARY_CASES)
+def test_extract_bbh_binary(task, text, expected):
+    assert extract_bbh_answer(text, task) == expected
+
+
+@pytest.mark.parametrize("task,text,expected", NUMERIC_CASES)
+def test_extract_bbh_numeric(task, text, expected):
+    assert extract_bbh_answer(text, task) == expected
+
+
+@pytest.mark.parametrize("text,expected", DYCK_CASES)
+def test_extract_bbh_dyck(text, expected):
+    assert extract_bbh_answer(text, "dyck_languages") == expected
+
+
+def test_bbh_dyck_scores_against_gold(bench):
+    pred = extract_bbh_answer("So the answer is <answer>])}</answer>", "dyck_languages")
+    assert bench.score(pred, "] ) }") is True
+
+
+@pytest.mark.parametrize("text,expected", WORD_CASES)
+def test_extract_bbh_word_sorting(text, expected):
+    assert extract_bbh_answer(text, "word_sorting") == expected
+
+
+def test_bbh_word_sorting_scores_against_gold(bench):
+    for text, _ in WORD_CASES:
+        assert bench.score(extract_bbh_answer(text, "word_sorting"), "apple banana cherry") is True
+
+
+@pytest.mark.parametrize("text,expected", FREE_CASES)
+def test_extract_bbh_free_form(bench, text, expected):
+    assert extract_bbh_answer(text, None) == expected
+    assert bench.extract_answer(text) == expected
+
+
+def test_extract_bbh_free_form_last_line_and_answer_is(bench):
+    assert bench.score(extract_bbh_answer("answer is True", None), "True") is True
+    assert bench.score(extract_bbh_answer("reasoning\nmore\nYes\n\n  \n", None), "Yes") is True
+    assert extract_bbh_answer(None, None) is None
+
+
+def test_extract_bbh_default_task_is_free_form():
+    assert extract_bbh_answer("So the answer is (B).") == "b"
+
+
+def test_extract_bbh_unknown_task_is_free_form():
+    for text, expected in FREE_CASES:
+        assert extract_bbh_answer(text, "not_a_bbh_task") == expected
+
+
+def test_extract_bbh_empty_remainder_uses_next_line():
+    assert extract_bbh_answer("So the answer is\n\n(C)\n", "date_understanding") == "c"
+    assert extract_bbh_answer("So the answer is\n  \nTrue", "boolean_expressions") == "true"
+
+
+def _ex(task):
+    return Example(id=f"{task}-0", question="q", answer="x", meta={"task": task})
+
+
+@pytest.mark.parametrize("task,text,expected",
+                         [("date_understanding", t, e) for t, e in MC_CASES]
+                         + BINARY_CASES + NUMERIC_CASES
+                         + [("dyck_languages", t, e) for t, e in DYCK_CASES]
+                         + [("word_sorting", t, e) for t, e in WORD_CASES])
+def test_bbh_extract_answer_for_dispatches_on_meta_task(bench, task, text, expected):
+    assert bench.extract_answer_for(text, _ex(task)) == expected

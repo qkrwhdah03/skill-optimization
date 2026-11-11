@@ -6,7 +6,7 @@ from typing import Any
 from .base import BaseLLM, RawGeneration
 from .registry import register_llm
 from .resources import engine_key, get_or_create_engine
-from .thinking import split_thinking
+from .thinking import render_chat_prompt, split_thinking
 
 
 @register_llm("hf")
@@ -44,17 +44,13 @@ class HFTransformersLLM(BaseLLM):
 
         model, tok = self._engine()
         enable_thinking = bool(gen.get("enable_thinking", True))
-        rendered = tok.apply_chat_template(
-            [{"role": "user", "content": prompt}],
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=enable_thinking,
-        )
+        rendered = render_chat_prompt(tok, prompt, enable_thinking)
         inputs = tok(rendered, return_tensors="pt", add_special_tokens=False).to(model.device)
         if gen.get("seed") is not None:
             torch.manual_seed(int(gen["seed"]))
         temperature = float(gen.get("temperature", 0.0) or 0.0)
-        gen_kwargs: dict[str, Any] = {"max_new_tokens": int(gen.get("max_tokens", 1024))}
+        max_new_tokens = int(gen.get("max_tokens", 1024))
+        gen_kwargs: dict[str, Any] = {"max_new_tokens": max_new_tokens}
         if temperature > 0:
             gen_kwargs.update(do_sample=True, temperature=temperature)
             if gen.get("top_p") is not None:
@@ -68,14 +64,18 @@ class HFTransformersLLM(BaseLLM):
         n_in = inputs["input_ids"].shape[1]
         new_ids = out[0][n_in:]
         text = tok.decode(new_ids, skip_special_tokens=True)
+        n_new = int(new_ids.shape[0])
+        eos = tok.eos_token_id
+        truncated = n_new >= max_new_tokens and (eos is None or n_new == 0 or int(new_ids[-1]) != eos)
         reasoning, visible = split_thinking(text)
         return RawGeneration(
             text=visible,
             reasoning_text=reasoning,
             prompt_text=rendered,
             input_tokens=int(n_in),
-            output_tokens=int(new_ids.shape[0]),
+            output_tokens=n_new,
             raw=text,
+            truncated=bool(truncated),
         )
 
     def count_tokens(self, text: str) -> int:

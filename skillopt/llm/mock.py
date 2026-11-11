@@ -7,7 +7,7 @@ from typing import ClassVar
 
 from .base import BaseLLM, RawGeneration
 from .registry import register_llm
-from .thinking import split_thinking
+from .thinking import THINK_CLOSE, THINK_OPEN, split_thinking
 
 _TOKEN_RE = re.compile(r"\w+|[^\w\s]")
 
@@ -46,7 +46,11 @@ class MockLLM(BaseLLM):
         else:
             out = self._default_output(prompt, gen)
         reasoning, visible = split_thinking(out)
-        return RawGeneration(text=visible, reasoning_text=reasoning, prompt_text=prompt, raw=out)
+        # an unclosed think block is what a max_tokens cut looks like
+        truncated = THINK_OPEN in out and THINK_CLOSE not in out
+        return RawGeneration(
+            text=visible, reasoning_text=reasoning, prompt_text=prompt, raw=out, truncated=truncated
+        )
 
     def count_tokens(self, text: str) -> int:
         if not text:

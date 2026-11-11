@@ -35,7 +35,7 @@ TIME_RE = r"\d+\.\ds"
 
 PROGRESS_RE = re.compile(r"^eval (\S+)\s+(\S+)\s+(\S+)\s+(\d+)/(\d+)$")
 DONE_RE = re.compile(
-    r"^eval (\S+)\s+(\S+)\s+(\S+)\s+done n=(\d+) acc=(\S+) out_tok=(\S+) think_tok=(\S+) time=" + TIME_RE + r"$"
+    r"^eval (\S+)\s+(\S+)\s+(\S+)\s+done n=(\d+) acc=(\S+) out_tok=(\S+) think_tok=(\S+) trunc=(\d+) trunc_rate=(\d+\.\d{3}) time=" + TIME_RE + r"$"
 )
 
 
@@ -601,6 +601,8 @@ def _check_done(msg, res):
     assert d.group(5) == f"{res.accuracy:.3f}"
     assert d.group(6) == f"{res.avg_output_tokens:.1f}"
     assert d.group(7) == f"{res.avg_reasoning_tokens:.1f}"
+    assert d.group(8) == str(res.num_truncated)
+    assert d.group(9) == f"{res.truncation_rate:.3f}"
 
 
 def test_evaluator_multi_batch_progress(caplog):
@@ -655,6 +657,7 @@ def test_evaluator_zero_examples(caplog):
     done = [m for m in msgs if DONE_RE.match(m)]
     assert len(done) == 1
     assert " done n=0 " in done[0]
+    assert " trunc=0 trunc_rate=0.000 " in done[0]
     _check_done(done[0], res)
 
 

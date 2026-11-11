@@ -53,7 +53,9 @@ class OpenAICompatLLM(BaseLLM):
             payload["chat_template_kwargs"] = {"enable_thinking": bool(gen["enable_thinking"])}
         data = self._post(payload)
 
-        message = ((data.get("choices") or [{}])[0] or {}).get("message", {}) or {}
+        choice = (data.get("choices") or [{}])[0] or {}
+        message = choice.get("message", {}) or {}
+        truncated = choice.get("finish_reason") == "length"
         content = message.get("content") or ""
         reasoning_content = message.get("reasoning_content")
         if reasoning_content is not None:
@@ -71,4 +73,5 @@ class OpenAICompatLLM(BaseLLM):
             output_tokens=usage.get("completion_tokens"),
             reasoning_tokens=details.get("reasoning_tokens"),
             raw=data,
+            truncated=bool(truncated),
         )

@@ -36,7 +36,7 @@ benchmarks:
 evaluator: {batch_size: 64}
 
 # Optimizer = ONE class you write (skillopt/optimizer/algorithms/<file>.py, @register_optimizer("<name>")).
-# Every key except `name` is passed to its constructor. Worked example: {name: opro, num_candidates: 4, top_k: 5}.
+# Every key except `name` is passed to its constructor. Worked example: {name: opro, num_candidates: 4, top_k: 5, max_retries: 2}.
 optimizer: {name: my_optimizer}
 max_iterations: 5        # max number of update() calls; the loop also stops when update() returns []
 

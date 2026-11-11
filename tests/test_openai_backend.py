@@ -121,3 +121,23 @@ def test_api_key_not_in_run_dir_config(monkeypatch, tmp_path):
     for f in run.rglob("*"):
         if f.is_file():
             assert SECRET not in f.read_text(encoding="utf-8", errors="ignore"), f
+
+
+# --- loop 2026-11-11-003: truncation from finish_reason ------------------------
+
+def _resp_with_finish(reason):
+    choice = {"message": {"content": "Answer 5", "reasoning_content": "think think"}}
+    if reason is not None:
+        choice["finish_reason"] = reason
+    return {"choices": [choice], "usage": FULL_RESPONSE["usage"]}
+
+
+@pytest.mark.parametrize("reason,expected", [("length", True), ("stop", False), (None, False)])
+def test_openai_truncated_from_finish_reason(llm, reason, expected):
+    llm._next_response = _resp_with_finish(reason)
+    assert llm.generate("q").truncated is expected
+
+
+def test_openai_payload_still_uses_chat_template_kwargs(llm):
+    llm.generate("q")
+    assert llm._payloads[-1]["chat_template_kwargs"] == {"enable_thinking": False}

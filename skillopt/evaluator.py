@@ -8,9 +8,10 @@ The Evaluator only measures; it never aggregates, compares or judges. Its ONE fi
     SkillEvaluation.results          {benchmark key (config order): EvalResult}; benchmarks without the split
                                      are skipped
     EvalResult                       n, accuracy, avg_input_tokens, avg_output_tokens (thinking INCLUDED),
-                                     avg_reasoning_tokens, avg_total_tokens, avg_latency, failures(k),
+                                     avg_reasoning_tokens, avg_total_tokens, avg_latency, num_truncated,
+                                     truncation_rate, failures(k),
                                      items: list[ItemResult] (question, prediction, gold, correct, usage,
-                                     latency, response_text, reasoning_text)
+                                     latency, response_text, reasoning_text, truncated = hit max_tokens)
 """
 from __future__ import annotations
 
@@ -37,6 +38,7 @@ class ItemResult:
     response_text: str
     reasoning_text: str
     question: str = ""
+    truncated: bool = False  # generation stopped because it hit max_tokens
 
     def to_dict(self) -> dict:
         return {
@@ -49,6 +51,7 @@ class ItemResult:
             "response_text": self.response_text,
             "reasoning_text": self.reasoning_text,
             "question": self.question,
+            "truncated": self.truncated,
         }
 
 
@@ -90,6 +93,14 @@ class EvalResult:
     def avg_latency(self) -> float:
         return self._mean([it.latency for it in self.items])
 
+    @property
+    def num_truncated(self) -> int:
+        return sum(1 for it in self.items if it.truncated)
+
+    @property
+    def truncation_rate(self) -> float:
+        return self.num_truncated / self.n if self.n else 0.0
+
     def failures(self, k: int | None = None) -> list[ItemResult]:
         bad = [it for it in self.items if not it.correct]
         return bad if k is None else bad[:k]
@@ -106,6 +117,8 @@ class EvalResult:
             "avg_reasoning_tokens": self.avg_reasoning_tokens,
             "avg_total_tokens": self.avg_total_tokens,
             "avg_latency": self.avg_latency,
+            "num_truncated": self.num_truncated,
+            "truncation_rate": self.truncation_rate,
         }
 
 
@@ -224,7 +237,7 @@ class Evaluator:
             prompts = [benchmark.build_prompt(skill, ex) for ex in chunk]
             responses = self.llm.generate_batch(prompts)
             for ex, resp in zip(chunk, responses):
-                pred = benchmark.extract_answer(resp.text)
+                pred = benchmark.extract_answer_for(resp.text, ex)
                 items.append(
                     ItemResult(
                         example_id=ex.id,
@@ -236,6 +249,7 @@ class Evaluator:
                         response_text=resp.text,
                         reasoning_text=resp.reasoning_text,
                         question=ex.question,
+                        truncated=bool(resp.truncated),
                     )
                 )
             logger.info(f"eval {skill.id:<24} {key:<10} {split:<8} {len(items):>5}/{total}")
@@ -243,7 +257,8 @@ class Evaluator:
         secs = time.perf_counter() - started
         logger.info(
             f"eval {skill.id:<24} {key:<10} {split:<8} done n={result.n} acc={result.accuracy:.3f} "
-            f"out_tok={result.avg_output_tokens:.1f} think_tok={result.avg_reasoning_tokens:.1f} time={secs:.1f}s"
+            f"out_tok={result.avg_output_tokens:.1f} think_tok={result.avg_reasoning_tokens:.1f} "
+            f"trunc={result.num_truncated} trunc_rate={result.truncation_rate:.3f} time={secs:.1f}s"
         )
         return result
 
