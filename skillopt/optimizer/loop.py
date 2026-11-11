@@ -7,15 +7,20 @@ No scoring, ranking, selection or final evaluation: it stops when ``update`` ret
 """
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
 from typing import Callable
 
 from skillopt.evaluator import Evaluator, SkillEvaluation
+from skillopt.logs import preview
 from skillopt.skills import Skill
 
 from .base import Optimizer
 
 TRAIN_SPLIT: str = "train"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -37,6 +42,12 @@ def _check_prompts(prompts, where: str) -> list[Skill]:
     return list(prompts)
 
 
+def _log_prompts(prompts: list[Skill]) -> None:
+    for skill in prompts:
+        logger.info(f"  new prompt {skill.id}: {preview(skill.instruction)}")
+        logger.debug(f"prompt {skill.id} full instruction: {skill.instruction}")
+
+
 def optimize(
     optimizer: Optimizer,
     evaluator: Evaluator,
@@ -51,18 +62,32 @@ def optimize(
     prompts = _check_prompts(optimizer.initial_prompts(), "initial_prompts()")
     if not prompts:
         raise ValueError("initial_prompts() returned no skills")
+    logger.info(f"initial prompts: {len(prompts)}")
+    _log_prompts(prompts)
 
     history: list[list[SkillEvaluation]] = []
     index = 0
     while True:
+        logger.info(f"round {index}/{max_iterations}: evaluating {len(prompts)} prompts on split {TRAIN_SPLIT}")
         results = evaluator.evaluate(prompts, TRAIN_SPLIT)
         if on_round is not None:
             on_round(index, results)
         if index >= max_iterations:
             history.append(results)
-            return LoopResult(history=history, stop_reason="max_iterations")
-        prompts = _check_prompts(optimizer.update(results, list(history)), "update()")
+            return _stop(history, "max_iterations")
+        logger.info(f"round {index}: optimizer generating new prompts ...")
+        started = time.perf_counter()
+        updated = optimizer.update(results, list(history))
+        secs = time.perf_counter() - started
+        prompts = _check_prompts(updated, "update()")
+        logger.info(f"round {index}: optimizer returned {len(prompts)} prompts in {secs:.1f}s")
+        _log_prompts(prompts)
         history.append(results)
         if not prompts:
-            return LoopResult(history=history, stop_reason="empty_update")
+            return _stop(history, "empty_update")
         index += 1
+
+
+def _stop(history: list[list[SkillEvaluation]], stop_reason: str) -> LoopResult:
+    logger.info(f"stop: {stop_reason} after {len(history)} rounds")
+    return LoopResult(history=history, stop_reason=stop_reason)

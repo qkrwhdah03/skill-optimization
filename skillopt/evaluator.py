@@ -14,12 +14,16 @@ The Evaluator only measures; it never aggregates, compares or judges. Its ONE fi
 """
 from __future__ import annotations
 
+import logging
 import re
+import time
 from dataclasses import dataclass
 
 from .benchmarks import Benchmark, build_benchmark
 from .llm import BaseLLM, TokenUsage
 from .skills import Skill
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -212,6 +216,8 @@ class Evaluator:
         examples = benchmark.load(split)
         if limit is not None:
             examples = examples[:limit]
+        started = time.perf_counter()
+        total = len(examples)
         items: list[ItemResult] = []
         for start in range(0, len(examples), self.batch_size):
             chunk = examples[start : start + self.batch_size]
@@ -232,7 +238,14 @@ class Evaluator:
                         question=ex.question,
                     )
                 )
-        return EvalResult(skill_id=skill.id, benchmark=key, split=split, items=items)
+            logger.info(f"eval {skill.id:<24} {key:<10} {split:<8} {len(items):>5}/{total}")
+        result = EvalResult(skill_id=skill.id, benchmark=key, split=split, items=items)
+        secs = time.perf_counter() - started
+        logger.info(
+            f"eval {skill.id:<24} {key:<10} {split:<8} done n={result.n} acc={result.accuracy:.3f} "
+            f"out_tok={result.avg_output_tokens:.1f} think_tok={result.avg_reasoning_tokens:.1f} time={secs:.1f}s"
+        )
+        return result
 
     def evaluate_skill(self, skill: Skill, split: str = "train", limit: int | None = None) -> SkillEvaluation:
         """Evaluate one skill on ``split`` of every benchmark providing it (config order).

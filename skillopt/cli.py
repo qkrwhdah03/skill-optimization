@@ -9,15 +9,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from pathlib import Path
 
 from .baselines import BASELINE_NAMES, get_baseline
 from .config import load_config, read_raw_config, resolve_path
 from .evaluator import EvalResult, Evaluator, SkillEvaluation, build_benchmark_specs
 from .llm import build_role_llms
+from .llm.base import UsageSnapshot
+from .logs import LEVELS, setup_logging
 from .optimizer import build_optimizer, optimize
 from .runlog import RunDir, set_seed
 from .skills import Skill
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG: str = "configs/config.yaml"
 
@@ -78,6 +83,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--skills", nargs="+", default=None, help="[--eval-only] baseline names or skill json paths")
     p.add_argument("--split", default=None, help="[--eval-only] split: train, val, test or heldout")
     p.add_argument("--limit", type=int, default=None, help="[--eval-only] max items per benchmark")
+    log = p.add_mutually_exclusive_group()
+    log.add_argument(
+        "--log-level",
+        dest="log_level",
+        type=str.upper,
+        choices=LEVELS,
+        default="INFO",
+        metavar="LEVEL",
+        help=f"terminal log level: {', '.join(LEVELS)} (default INFO; logs go to stderr)",
+    )
+    log.add_argument("-v", "--verbose", dest="log_level", action="store_const", const="DEBUG", help="= --log-level DEBUG")
+    log.add_argument("-q", "--quiet", dest="log_level", action="store_const", const="WARNING", help="= --log-level WARNING")
     return p
 
 
@@ -88,9 +105,16 @@ def _fmt(r: EvalResult) -> str:
     )
 
 
-def _print_evaluation(ev: SkillEvaluation, prefix: str | None = None) -> None:
+def _log_evaluation(ev: SkillEvaluation, prefix: str | None = None) -> None:
     for r in ev.results.values():
-        print(f"[{ev.split if prefix is None else prefix}] {_fmt(r)}")
+        logger.info(f"{ev.split if prefix is None else prefix} | {_fmt(r)}")
+
+
+def _fmt_usage(u: UsageSnapshot) -> str:
+    return (
+        f"calls={u.calls} input={u.input_tokens} output={u.output_tokens} reasoning={u.reasoning_tokens} "
+        f"total={u.total_tokens} time={u.latency:.1f}s"
+    )
 
 
 def _benchmark_configs(cfg: dict) -> dict:
@@ -150,9 +174,9 @@ def run_loop(cfg: dict) -> Path:
         run.save_usage("target", tgt_usage)
         run.save_usage("optimizer", opt_usage)
         for ev in evaluations:
-            _print_evaluation(ev, f"round {index}")
+            _log_evaluation(ev, f"round {index}")
 
-    print(f"[run] {run.path}")
+    logger.info(f"run dir: {run.path}")
     result = optimize(optimizer, evaluator, max_iterations, on_round=on_round)
 
     run.save_json(
@@ -162,11 +186,10 @@ def run_loop(cfg: dict) -> Path:
     tgt_usage, opt_usage = target.usage.snapshot(), optimizer_llm.usage.snapshot()
     run.save_usage("target", tgt_usage)
     run.save_usage("optimizer", opt_usage)
-    print(
-        f"[done] rounds={len(result.history)} stop={result.stop_reason}; "
-        f"target calls={tgt_usage.calls} tokens={tgt_usage.total_tokens}; "
-        f"optimizer calls={opt_usage.calls} tokens={opt_usage.total_tokens}"
-    )
+    logger.info(f"finished: stop_reason={result.stop_reason} rounds={len(result.history)}")
+    logger.info(f"usage target: {_fmt_usage(tgt_usage)}")
+    logger.info(f"usage optimizer: {_fmt_usage(opt_usage)}")
+    logger.info(f"run dir: {run.path}")
     return run.path
 
 
@@ -201,22 +224,28 @@ def run_eval_only(cfg: dict) -> Path:
     target = build_role_llms({"target": cfg["llm"]["target"]}, hw.get("vram_gb"))["target"]
     evaluator = Evaluator(target, specs, **(cfg.get("evaluator") or {}))
 
-    print(f"[run] {run.path}")
+    logger.info(f"run dir: {run.path}")
     summaries = []
-    for skill in skills:
+    for i, skill in enumerate(skills, 1):
+        logger.info(f"skill {i}/{len(skills)}: {skill.id}")
         evaluation = evaluator.evaluate_skill(skill, split, limit)
         run.save_skill(skill)
         run.save_evaluation(evaluation)
         summaries.append(evaluation.summary())
-        _print_evaluation(evaluation)
+        _log_evaluation(evaluation)
     run.save_json("summary.json", summaries)
-    run.save_usage("target", target.usage.snapshot())
+    tgt_usage = target.usage.snapshot()
+    run.save_usage("target", tgt_usage)
+    logger.info(f"finished: {len(skills)} skills evaluated on split {split}")
+    logger.info(f"usage target: {_fmt_usage(tgt_usage)}")
+    logger.info(f"run dir: {run.path}")
     return run.path
 
 
 def main(argv: list[str] | None = None) -> Path:
     parser = build_parser()
     args = parser.parse_args(argv)
+    setup_logging(args.log_level)
     if not args.eval_only and (args.skills is not None or args.split is not None or args.limit is not None):
         parser.error("--skills/--split/--limit require --eval-only")
 

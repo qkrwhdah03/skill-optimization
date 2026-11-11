@@ -1,6 +1,7 @@
 """LLM backend registry and role construction."""
 from __future__ import annotations
 
+import logging
 from typing import Callable
 
 from skillopt.registry import Registry
@@ -8,6 +9,8 @@ from skillopt.registry import Registry
 from .base import BaseLLM
 
 LLM_REGISTRY = Registry("llm backend")
+
+logger = logging.getLogger(__name__)
 
 
 def register_llm(name: str) -> Callable[[type[BaseLLM]], type[BaseLLM]]:
@@ -34,5 +37,11 @@ def build_role_llms(llm_configs: dict[str, dict], vram_budget_gb: float | None =
     from .resources import check_vram_budget
 
     if vram_budget_gb is not None:
-        check_vram_budget(llm_configs, vram_budget_gb)
-    return {name: build_llm(cfg, role=name) for name, cfg in llm_configs.items()}
+        total = check_vram_budget(llm_configs, vram_budget_gb)
+        logger.debug(f"vram estimate {total:.2f} GB of {vram_budget_gb} GB")
+    llms: dict[str, BaseLLM] = {}
+    for name, cfg in llm_configs.items():
+        llms[name] = build_llm(cfg, role=name)
+        dtype = (cfg.get("engine") or {}).get("dtype") or "-"
+        logger.info(f"llm {name}: backend={cfg.get('backend')} model={cfg.get('model')} dtype={dtype}")
+    return llms

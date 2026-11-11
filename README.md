@@ -103,6 +103,8 @@ python run.py --set max_iterations=10 --set benchmarks.gsm8k.train=100    # over
 python run.py --eval-only --skills cot <skill.json> --split test          # evaluate skills
 ```
 
+Progress logs go to stderr (INFO default): `--log-level DEBUG|INFO|WARNING|ERROR`, `-v` (= DEBUG), `-q` (= WARNING); saved outputs are unaffected.
+
 `--mock` with the default `my_optimizer` raises `NotImplementedError` until it is filled in.
 
 ## Run directory
