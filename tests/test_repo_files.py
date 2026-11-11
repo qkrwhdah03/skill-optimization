@@ -73,7 +73,7 @@ def test_old_entry_points_removed(name):
 
 def test_only_one_top_level_config():
     assert sorted(p.name for p in CONFIGS.glob("*.yaml")) == ["config.yaml"]
-    for preset in ("mock.yaml", "qwen3-8b-vllm.yaml"):
+    for preset in ("mock.yaml", "qwen3-8b-vllm.yaml", "qwen3-8b-fp16-vllm.yaml"):
         assert (CONFIGS / "models" / preset).is_file(), preset
 
 

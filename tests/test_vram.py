@@ -215,6 +215,7 @@ def test_qwen3_8b_vllm_preset():
         cfg = yaml.safe_load(f)
     assert cfg["model"] == "Qwen/Qwen3-8B"
     assert cfg["backend"] == "vllm"
+    assert cfg["engine"]["dtype"] == "bfloat16"
 
 
 def test_config_targets_qwen3_8b_shared_engine():

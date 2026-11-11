@@ -9,12 +9,13 @@ run: {root: runs, name: run}          # outputs go to runs/<timestamp>_<name>/
 hardware: {vram_gb: 24}               # VRAM budget checked before any model is built
 
 # LLM roles. Same preset for both -> ONE shared vLLM engine (~0.85 * 24 = 20.4 GB).
-# Swap a model by preset name, e.g. --set llm.optimizer.preset=openai-api.
+# Swap a model by preset name, e.g. bf16 on compute capability >= 8.0:
+#   --set llm.target.preset=qwen3-8b-vllm --set llm.optimizer.preset=qwen3-8b-vllm
 llm:
   target:
-    preset: qwen3-8b-vllm
+    preset: qwen3-8b-fp16-vllm
   optimizer:
-    preset: qwen3-8b-vllm
+    preset: qwen3-8b-fp16-vllm
     generation: {temperature: 0.8, enable_thinking: false, max_tokens: 1024}
 
 # Benchmarks the Evaluator measures (raw, per benchmark), keyed by name. Splits: train (evaluated every loop

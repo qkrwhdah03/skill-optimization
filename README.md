@@ -26,9 +26,10 @@ Python >= 3.10. Real runs need one 24 GB GPU; `--mock` needs none.
 | `pip install -e .[dev]` | `pytest` | tests, `--mock` |
 | `pip install -e .[data]` | `datasets` | GSM8K / BBH from Hugging Face |
 | `pip install -e .[vllm]` | `vllm` | `*-vllm` presets (default), Linux / WSL2 only |
-| `pip install -e .[hf]` | `torch`, `transformers`, `accelerate`, `bitsandbytes` | `qwen3-8b-hf*` presets |
+| `pip install -e .[hf]` | `torch`, `transformers`, `accelerate`, `bitsandbytes` | `hf` backend (no bundled preset; add one with `backend: hf`) |
 
-A default real run needs `.[vllm,data]`. `qwen3-8b-server` and `openai-api` need no extras.
+A default real run needs `.[vllm,data]`. The `openai` backend (OpenAI API or a local OpenAI-compatible server) needs no
+extras (add a preset with `backend: openai`).
 
 ## Optimizer
 
@@ -121,9 +122,11 @@ runs/<timestamp>_<name>/
 
 ## Models
 
-Presets in `configs/models/`: `qwen3-8b-vllm` (default), `-fp8-vllm`, `-awq-vllm`, `qwen3-4b-vllm`, `qwen3-8b-hf`,
-`-hf-4bit`, `qwen3-8b-server`, `openai-api`, `mock`. The default reserves 0.85 × 24 = 20.4 GB. Roles with the same
-model share one engine, and `check_vram_budget` stops the run before loading if `hardware.vram_gb` is exceeded.
+Presets in `configs/models/`: `qwen3-8b-fp16-vllm` (default), `qwen3-8b-vllm` (bf16), `mock`. bf16 needs
+compute capability >= 8.0 (Ampere or newer); use fp16 otherwise (e.g. TITAN RTX, 7.5). On a bf16-capable GPU:
+`--set llm.target.preset=qwen3-8b-vllm --set llm.optimizer.preset=qwen3-8b-vllm`. The default reserves
+0.85 × 24 = 20.4 GB. Roles with the same model share one engine, and `check_vram_budget` stops the run before loading
+if `hardware.vram_gb` is exceeded. Other models or backends: add a preset file to `configs/models/`.
 
 ## Extending
 

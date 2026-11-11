@@ -1,0 +1,15 @@
+# Qwen3-8B (fp16, ~16 GB weights) on vLLM. DEFAULT. For GPUs without bf16 (compute capability < 8.0, e.g. TITAN RTX 7.5).
+# Fits a 24 GB GPU; optimizer + target can share this engine.
+backend: vllm
+model: Qwen/Qwen3-8B
+engine:
+  dtype: float16
+  gpu_memory_utilization: 0.85
+  max_model_len: 16384
+generation:
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  max_tokens: 8192
+  seed: 0
+  enable_thinking: true
