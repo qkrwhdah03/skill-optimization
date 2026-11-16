@@ -46,6 +46,25 @@ def _rank(evals: list[SkillEvaluation]) -> list[tuple[SkillEvaluation, float, fl
     return sorted(scored, key=lambda t: (-t[1], t[2]))
 
 
+def _candidate(text: str | None, truncated: bool, seen: set[str]) -> tuple[str, str | None]:
+    """``(instruction, rejection reason or None)`` for one generation.
+
+    The last ``<skill>`` block wins; without one, a truncated reply is rejected and a complete reply is used whole.
+    """
+    blocks = _SKILL_RE.findall(text or "")
+    if blocks:
+        instruction = blocks[-1].strip()
+    elif truncated:
+        return "", "truncated"
+    else:
+        instruction = (text or "").strip()
+    if not instruction:
+        return instruction, "empty"
+    if instruction in seen:
+        return instruction, "duplicate"
+    return instruction, None
+
+
 @register_optimizer("opro")
 class OPROOptimizer(Optimizer):
     def __init__(
@@ -159,20 +178,7 @@ class OPROOptimizer(Optimizer):
             for attempt in range(1 + self.max_retries):
                 attempts += 1
                 resp = self.llm.generate(meta_prompt, **self.gen_kwargs)
-                blocks = _SKILL_RE.findall(resp.text or "")
-                reason = None
-                instruction = ""
-                if blocks:
-                    instruction = blocks[-1].strip()
-                elif resp.truncated:
-                    reason = "truncated"
-                else:
-                    instruction = self._parse(resp.text)
-                if reason is None:
-                    if not instruction:
-                        reason = "empty"
-                    elif instruction in seen:
-                        reason = "duplicate"
+                instruction, reason = _candidate(resp.text, resp.truncated, seen)
                 if reason is not None:
                     rejected[reason] += 1
                     logger.debug(f"update round {iteration}: candidate {k} attempt {attempt + 1} rejected ({reason})")

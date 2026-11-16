@@ -14,8 +14,8 @@ from pathlib import Path
 
 from .baselines import BASELINE_NAMES, get_baseline
 from .config import load_config, read_raw_config, resolve_path
-from .evaluator import EvalResult, Evaluator, SkillEvaluation, build_benchmark_specs
-from .llm import build_role_llms
+from .evaluator import BenchmarkSpec, EvalResult, Evaluator, SkillEvaluation, build_benchmark_specs
+from .llm import BaseLLM, build_role_llms
 from .llm.base import UsageSnapshot
 from .logs import LEVELS, setup_logging
 from . import report as run_report
@@ -129,9 +129,26 @@ def _benchmark_configs(cfg: dict) -> dict:
     return cfg["benchmarks"]
 
 
-def _run_dir(cfg: dict, suffix: str = "") -> RunDir:
+def _prepare_run(cfg: dict, bench_cfgs: dict, suffix: str = "") -> tuple[list[BenchmarkSpec], RunDir]:
+    """Build the benchmark specs (config errors before any LLM is built), seed, and create the run dir."""
+    seed = int(cfg.get("seed", 0))
+    specs = build_benchmark_specs(bench_cfgs, seed)
+    set_seed(seed)
     run_cfg = cfg.get("run", {}) or {}
-    return RunDir(run_cfg.get("root", "runs"), f"{run_cfg.get('name', 'run')}{suffix}", cfg)
+    run = RunDir(run_cfg.get("root", "runs"), f"{run_cfg.get('name', 'run')}{suffix}", cfg)
+    return specs, run
+
+
+def _vram_budget(cfg: dict) -> float | None:
+    return (cfg.get("hardware", {}) or {}).get("vram_gb")
+
+
+def _save_usage(run: RunDir, llms: dict[str, BaseLLM]) -> dict[str, UsageSnapshot]:
+    """Snapshot each role's usage and write ``usage/<role>.json``; returns the snapshots."""
+    snapshots = {role: llm.usage.snapshot() for role, llm in llms.items()}
+    for role, snapshot in snapshots.items():
+        run.save_usage(role, snapshot)
+    return snapshots
 
 
 def _loop_settings(cfg: dict) -> tuple[dict, int]:
@@ -162,26 +179,21 @@ def run_loop(cfg: dict) -> Path:
     """Run the optimize loop on split ``train``, saving every round; returns the run dir."""
     bench_cfgs = _benchmark_configs(cfg)
     opt_cfg, max_iterations = _loop_settings(cfg)
-    seed = int(cfg.get("seed", 0))
-    specs = build_benchmark_specs(bench_cfgs, seed)  # config errors before any LLM is built
-    set_seed(seed)
-    run = _run_dir(cfg)
+    specs, run = _prepare_run(cfg, bench_cfgs)
 
-    hw = cfg.get("hardware", {}) or {}
-    llms = build_role_llms(cfg["llm"], hw.get("vram_gb"))
+    llms = build_role_llms(cfg["llm"], _vram_budget(cfg))
     target, optimizer_llm = llms["target"], llms["optimizer"]
+    roles = {"target": target, "optimizer": optimizer_llm}
     evaluator = Evaluator(target, specs, **(cfg.get("evaluator") or {}))
     optimizer = build_optimizer(opt_cfg, optimizer_llm)
 
     def on_round(index: int, evaluations: list[SkillEvaluation]) -> None:
         rd = run.save_round(index, evaluations)
-        tgt_usage, opt_usage = target.usage.snapshot(), optimizer_llm.usage.snapshot()
+        usage = _save_usage(run, roles)
         run.save_json(
             str((rd / "usage.json").relative_to(run.path)),
-            {"target": tgt_usage.to_dict(), "optimizer": opt_usage.to_dict()},
+            {role: snapshot.to_dict() for role, snapshot in usage.items()},
         )
-        run.save_usage("target", tgt_usage)
-        run.save_usage("optimizer", opt_usage)
         for ev in evaluations:
             _log_evaluation(ev, f"round {index}")
         _write_report(run.path)
@@ -193,13 +205,11 @@ def run_loop(cfg: dict) -> Path:
         "run.json",
         {"rounds": len(result.history), "stop_reason": result.stop_reason, "max_iterations": max_iterations},
     )
-    tgt_usage, opt_usage = target.usage.snapshot(), optimizer_llm.usage.snapshot()
-    run.save_usage("target", tgt_usage)
-    run.save_usage("optimizer", opt_usage)
+    usage = _save_usage(run, roles)
     _write_report(run.path)
     logger.info(f"finished: stop_reason={result.stop_reason} rounds={len(result.history)}")
-    logger.info(f"usage target: {_fmt_usage(tgt_usage)}")
-    logger.info(f"usage optimizer: {_fmt_usage(opt_usage)}")
+    for role, snapshot in usage.items():
+        logger.info(f"usage {role}: {_fmt_usage(snapshot)}")
     logger.info(f"run dir: {run.path}")
     return run.path
 
@@ -226,13 +236,9 @@ def run_eval_only(cfg: dict) -> Path:
     split = str(ev_cfg.get("split") or "test")
     limit = ev_cfg.get("limit")
 
-    seed = int(cfg.get("seed", 0))
-    specs = build_benchmark_specs(bench_cfgs, seed)  # config errors before any LLM is built
-    set_seed(seed)
-    run = _run_dir(cfg, "_eval")
+    specs, run = _prepare_run(cfg, bench_cfgs, "_eval")
 
-    hw = cfg.get("hardware", {}) or {}
-    target = build_role_llms({"target": cfg["llm"]["target"]}, hw.get("vram_gb"))["target"]
+    target = build_role_llms({"target": cfg["llm"]["target"]}, _vram_budget(cfg))["target"]
     evaluator = Evaluator(target, specs, **(cfg.get("evaluator") or {}))
 
     logger.info(f"run dir: {run.path}")
@@ -245,10 +251,9 @@ def run_eval_only(cfg: dict) -> Path:
         summaries.append(evaluation.summary())
         _log_evaluation(evaluation)
     run.save_json("summary.json", summaries)
-    tgt_usage = target.usage.snapshot()
-    run.save_usage("target", tgt_usage)
+    usage = _save_usage(run, {"target": target})
     logger.info(f"finished: {len(skills)} skills evaluated on split {split}")
-    logger.info(f"usage target: {_fmt_usage(tgt_usage)}")
+    logger.info(f"usage target: {_fmt_usage(usage['target'])}")
     logger.info(f"run dir: {run.path}")
     return run.path
 

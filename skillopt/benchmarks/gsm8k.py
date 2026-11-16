@@ -25,13 +25,12 @@ def normalize_number(s: str | None) -> str | None:
     try:
         d = Decimal(t)
     except InvalidOperation:
-        return t.strip().lower()
+        return t.lower()
     if not d.is_finite():
         return t.lower()
     if d == d.to_integral_value():
         return str(int(d))
-    out = format(d.normalize(), "f")
-    return out
+    return format(d.normalize(), "f")
 
 
 @register_benchmark("gsm8k")
@@ -74,8 +73,7 @@ class GSM8K(Benchmark):
 
     @staticmethod
     def _gold(answer: str) -> str:
-        tail = answer.split("####")[-1] if "####" in answer else answer
-        return normalize_number(tail) or ""
+        return normalize_number(answer.split("####")[-1]) or ""
 
     def _example(self, prefix: str, idx: int, rec: dict) -> Example:
         return Example(

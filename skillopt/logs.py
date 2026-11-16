@@ -18,9 +18,7 @@ _PREFIX = LOGGER_NAME + "."
 
 def resolve_level(level: int | str) -> int:
     """int -> as-is; case-insensitive name in ``LEVELS`` -> ``logging.<LEVEL>``; anything else -> ValueError."""
-    if isinstance(level, bool):
-        raise ValueError(f"invalid log level {level!r}; expected one of {', '.join(LEVELS)}")
-    if isinstance(level, int):
+    if isinstance(level, int) and not isinstance(level, bool):
         return level
     if isinstance(level, str) and level.upper() in LEVELS:
         return getattr(logging, level.upper())
@@ -78,9 +76,7 @@ def preview(text: str, width: int = 80) -> str:
     if width < 1:
         raise ValueError(f"width must be >= 1, got {width!r}")
     flat = " ".join(str(text).split())
-    if len(flat) <= width:
-        return flat
-    return flat[:width] + "..."
+    return flat if len(flat) <= width else flat[:width] + "..."
 
 
 __all__ = ["LOGGER_NAME", "LOG_FORMAT", "DATE_FORMAT", "LEVELS", "resolve_level", "LogFormatter", "setup_logging", "preview"]

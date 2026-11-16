@@ -40,6 +40,20 @@ def _write_json(path: Path, obj: Any) -> Path:
     return path
 
 
+def _write_skill(skills_dir: Path, skill: Skill, num_tokens: int | None) -> Path:
+    """``<skills_dir>/<id>.json`` = ``Skill.to_dict()`` + ``num_tokens`` (the skill size or null)."""
+    return _write_json(skills_dir / f"{skill.id}.json", {**skill.to_dict(), "num_tokens": num_tokens})
+
+
+def _write_result(results_dir: Path, result: EvalResult) -> Path:
+    """``<results_dir>/<skill_id>.jsonl`` (one item per line) + ``.summary.json``; returns the summary path."""
+    results_dir.mkdir(parents=True, exist_ok=True)
+    with open(results_dir / f"{result.skill_id}.jsonl", "w", encoding="utf-8") as f:
+        for item in result.items:
+            f.write(json.dumps(item.to_dict(), ensure_ascii=False) + "\n")
+    return _write_json(results_dir / f"{result.skill_id}.summary.json", result.summary())
+
+
 class RunDir:
     def __init__(self, root: str | Path, name: str, config: dict) -> None:
         base = resolve_path(root)
@@ -66,16 +80,11 @@ class RunDir:
 
     def save_skill(self, skill: Skill, num_tokens: int | None = None) -> Path:
         """Write ``skills/<id>.json`` (``Skill.to_dict()`` + ``num_tokens``, the skill size or null)."""
-        return _write_json(self.path / "skills" / f"{skill.id}.json", {**skill.to_dict(), "num_tokens": num_tokens})
+        return _write_skill(self.path / "skills", skill, num_tokens)
 
     def save_eval(self, result: EvalResult, split: str) -> Path:
         """Write ``results/<split>/<benchmark>/<skill_id>.jsonl`` + ``.summary.json``; returns the summary path."""
-        d = self.path / "results" / split / result.benchmark
-        d.mkdir(parents=True, exist_ok=True)
-        with open(d / f"{result.skill_id}.jsonl", "w", encoding="utf-8") as f:
-            for item in result.items:
-                f.write(json.dumps(item.to_dict(), ensure_ascii=False) + "\n")
-        return _write_json(d / f"{result.skill_id}.summary.json", result.summary())
+        return _write_result(self.path / "results" / split / result.benchmark, result)
 
     def save_evaluation(self, evaluation: SkillEvaluation) -> list[Path]:
         return [self.save_eval(r, evaluation.split) for r in evaluation.results.values()]
@@ -95,13 +104,8 @@ class RunDir:
         d = self.round_dir(index)
         d.mkdir(parents=True, exist_ok=True)
         for ev in evaluations:
-            _write_json(d / "skills" / f"{ev.skill_id}.json", {**ev.skill.to_dict(), "num_tokens": ev.skill_tokens})
+            _write_skill(d / "skills", ev.skill, ev.skill_tokens)
             for result in ev.results.values():
-                rd = d / "results" / result.benchmark
-                rd.mkdir(parents=True, exist_ok=True)
-                with open(rd / f"{result.skill_id}.jsonl", "w", encoding="utf-8") as f:
-                    for item in result.items:
-                        f.write(json.dumps(item.to_dict(), ensure_ascii=False) + "\n")
-                _write_json(rd / f"{result.skill_id}.summary.json", result.summary())
+                _write_result(d / "results" / result.benchmark, result)
         _write_json(d / "summary.json", [ev.summary() for ev in evaluations])
         return d

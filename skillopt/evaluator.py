@@ -124,8 +124,6 @@ class EvalResult:
         }
 
 
-
-
 _KEY_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
 
 _MAPPING_EXAMPLE = "benchmarks: {gsm8k: {source: hf, train: 200, val: 200}}"
@@ -246,7 +244,7 @@ class Evaluator:
         started = time.perf_counter()
         total = len(examples)
         items: list[ItemResult] = []
-        for start in range(0, len(examples), self.batch_size):
+        for start in range(0, total, self.batch_size):
             chunk = examples[start : start + self.batch_size]
             prompts = [benchmark.build_prompt(skill, ex) for ex in chunk]
             responses = self.llm.generate_batch(prompts)
@@ -288,9 +286,7 @@ class Evaluator:
             )
             raise ValueError(f"no benchmark provides split '{split}' (available splits: {available})")
         skill_tokens = self.skill_tokens(skill)
-        results: dict[str, EvalResult] = {}
-        for key in keys:
-            results[key] = self.evaluate_split(skill, key, split, limit)
+        results = {key: self.evaluate_split(skill, key, split, limit) for key in keys}
         return SkillEvaluation(skill=skill, split=split, results=results, skill_tokens=skill_tokens)
 
     def evaluate(self, skills: list[Skill], split: str = "train", limit: int | None = None) -> list[SkillEvaluation]:

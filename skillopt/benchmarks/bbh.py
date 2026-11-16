@@ -146,9 +146,7 @@ _STRIP_CHARS = "_\"'\u201c\u201d\u2018\u2019 \t\r\n\f\v"
 
 
 def _task_kind(task: str | None) -> str:
-    if task is None:
-        return _FREE_FORM
-    return BBH_TASK_KINDS.get(task, _FREE_FORM)
+    return BBH_TASK_KINDS.get(task, _FREE_FORM)  # type: ignore[arg-type]
 
 
 def bbh_answer_format(task: str | None) -> str:
@@ -227,10 +225,7 @@ def extract_bbh_answer(text: str | None, task: str | None = None) -> str | None:
             if m:
                 value = m.group(0)
 
-    if value is None:
-        return None
-    norm = normalize_answer(value)
-    return norm if norm else None
+    return normalize_answer(value) or None
 
 
 def normalize_answer(s: str | None) -> str | None:

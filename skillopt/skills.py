@@ -94,13 +94,15 @@ def _origin_from(raw: object) -> SkillOrigin | None:
     return SkillOrigin.from_dict(raw)
 
 
-def _skill_blocks(skill: Skill) -> list[str]:
+def _skill_blocks(skill: Skill, question: str | None = None) -> list[str]:
+    """Instruction (if non-empty; ``{question}`` filled in when ``question`` is given) + one block per demo."""
     blocks: list[str] = []
     instruction = (skill.instruction or "").strip()
     if instruction:
+        if question is not None:
+            instruction = instruction.replace(QUESTION_PLACEHOLDER, question)
         blocks.append(instruction)
-    for fs in skill.few_shot:
-        blocks.append(f"Q: {fs.question}\nA: {fs.answer}")
+    blocks.extend(f"Q: {fs.question}\nA: {fs.answer}" for fs in skill.few_shot)
     return blocks
 
 
@@ -110,21 +112,10 @@ def skill_text(skill: Skill) -> str:
 
 
 def render_prompt(skill: Skill, question: str, answer_format: str = "") -> str:
-    blocks: list[str] = []
-    instruction = (skill.instruction or "").strip()
-    placed = False
-    if instruction:
-        if QUESTION_PLACEHOLDER in instruction:
-            instruction = instruction.replace(QUESTION_PLACEHOLDER, question)
-            placed = True
-        blocks.append(instruction)
-    for fs in skill.few_shot:
-        blocks.append(f"Q: {fs.question}\nA: {fs.answer}")
-    final: list[str] = []
-    if not placed:
-        final.append(f"Q: {question}")
+    """Skill blocks, then a final block: ``Q: <question>`` (unless the instruction placed it), format line, ``A:``."""
+    placed = QUESTION_PLACEHOLDER in (skill.instruction or "")
+    final: list[str] = [] if placed else [f"Q: {question}"]
     if answer_format:
         final.append(answer_format)
     final.append("A:")
-    blocks.append("\n".join(final))
-    return "\n\n".join(blocks)
+    return "\n\n".join(_skill_blocks(skill, question) + ["\n".join(final)])

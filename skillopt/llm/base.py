@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -101,15 +102,7 @@ class UsageTracker:
         self._snap = UsageSnapshot()
 
     def snapshot(self) -> UsageSnapshot:
-        s = self._snap
-        return UsageSnapshot(
-            calls=s.calls,
-            input_tokens=s.input_tokens,
-            output_tokens=s.output_tokens,
-            reasoning_tokens=s.reasoning_tokens,
-            total_tokens=s.total_tokens,
-            latency=s.latency,
-        )
+        return dataclasses.replace(self._snap)
 
 
 class BaseLLM(ABC):
@@ -182,11 +175,8 @@ class BaseLLM(ABC):
         for tracker in list(self._active_trackers):
             tracker.record(usage, latency)
 
-    def generate(self, prompt: str, **gen_kwargs) -> LLMResponse:
-        gen = {**self.gen_defaults, **gen_kwargs}
-        start = time.perf_counter()
-        raw = self._generate(prompt, gen)
-        latency = time.perf_counter() - start
+    def _response(self, raw: RawGeneration, prompt: str, latency: float) -> LLMResponse:
+        """Measure ``raw``, record its usage, and wrap it as an ``LLMResponse``."""
         usage = self._usage_from_raw(raw, prompt)
         self._record(usage, latency)
         return LLMResponse(
@@ -198,6 +188,12 @@ class BaseLLM(ABC):
             truncated=bool(raw.truncated),
         )
 
+    def generate(self, prompt: str, **gen_kwargs) -> LLMResponse:
+        gen = {**self.gen_defaults, **gen_kwargs}
+        start = time.perf_counter()
+        raw = self._generate(prompt, gen)
+        return self._response(raw, prompt, time.perf_counter() - start)
+
     def generate_batch(self, prompts: list[str], **gen_kwargs) -> list[LLMResponse]:
         prompts = list(prompts)
         if not prompts:
@@ -207,25 +203,9 @@ class BaseLLM(ABC):
         raws = self._generate_batch(prompts, gen)
         wall = time.perf_counter() - start
         if len(raws) != len(prompts):
-            raise RuntimeError(
-                f"backend returned {len(raws)} generations for {len(prompts)} prompts"
-            )
+            raise RuntimeError(f"backend returned {len(raws)} generations for {len(prompts)} prompts")
         latency = wall / len(prompts)
-        out: list[LLMResponse] = []
-        for prompt, raw in zip(prompts, raws):
-            usage = self._usage_from_raw(raw, prompt)
-            self._record(usage, latency)
-            out.append(
-                LLMResponse(
-                    text=raw.text,
-                    reasoning_text=raw.reasoning_text,
-                    usage=usage,
-                    latency=latency,
-                    raw=raw.raw,
-                    truncated=bool(raw.truncated),
-                )
-            )
-        return out
+        return [self._response(raw, prompt, latency) for prompt, raw in zip(prompts, raws)]
 
     @contextlib.contextmanager
     def track(self) -> Iterator[UsageTracker]:
