@@ -16,7 +16,8 @@ Page layout (Python renders all markup; a small inline script only adds interact
   highlights ancestors and descendants; click opens the side detail panel (instruction, origin, word diff vs the
   first parent, metrics, up to ``MAX_FAILURES_SHOWN`` incorrect items per benchmark). Pan with drag, zoom with
   the wheel or the buttons;
-- summary cards: round, status, skill counts, cumulative token usage;
+- summary cards: round, status, skill counts, cumulative token usage, scoring environment (math-verify version
+  from ``meta.json``);
 - per-benchmark charts by round: accuracy and avg output tokens (clicking a point selects its node);
 - a collapsed table of every evaluated skill in saved order; it is sortable only by the user (header clicks).
 
@@ -148,6 +149,7 @@ def load_run(run_dir: str | Path) -> dict:
     path = path.resolve()
     config = _as_dict(_read_yaml(path / "config.yaml")) or {}
     run_json = _as_dict(_read_json(path / "run.json"))
+    meta = _as_dict(_read_json(path / "meta.json")) or {}
     opt_cfg = config.get("optimizer")
     opt_name = opt_cfg.get("name") if isinstance(opt_cfg, dict) else None
     if run_json is not None and _as_int(run_json.get("max_iterations")) is not None:
@@ -217,6 +219,7 @@ def load_run(run_dir: str | Path) -> dict:
         },
         "benchmarks": benchmarks,
         "rounds": rounds,
+        "scoring": _as_dict(meta.get("scoring")),
     }
 
 
@@ -1022,6 +1025,16 @@ def _usage_card(card: str, label: str, usage: dict | None) -> str:
     )
 
 
+def _math_verify_text(scoring: dict | None) -> str:
+    if isinstance(scoring, dict):
+        version = scoring.get("math_verify")
+        if isinstance(version, str) and version:
+            return f"math-verify: {version}"
+        if "math_verify" in scoring and version is None:
+            return "math-verify: not installed"
+    return "math-verify: unknown"
+
+
 def _render_summary(data: dict) -> str:
     rounds = data["rounds"]
     latest = rounds[-1]["index"] if rounds else None
@@ -1041,6 +1054,9 @@ def _render_summary(data: dict) -> str:
         f'<div class="card-sub">evaluated (round, skill) pairs &middot; {_int_txt(n_distinct)} distinct skills</div></div>'
         + _usage_card("target-usage", "Target usage", data["usage"].get("target"))
         + _usage_card("optimizer-usage", "Optimizer usage", data["usage"].get("optimizer"))
+        + '<div class="card" data-card="scoring"><div class="card-label">Scoring</div>'
+        f'<div class="card-value">{_e(_math_verify_text(data.get("scoring")))}</div>'
+        '<div class="card-sub">symbolic math equivalence</div></div>'
         + "</div></section>"
     )
 

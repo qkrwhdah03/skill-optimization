@@ -6,6 +6,7 @@ Rule-based comparison uses the stdlib only; an optional symbolic check uses
 from __future__ import annotations
 
 import functools
+import importlib.metadata
 import logging
 import re
 import threading
@@ -190,6 +191,22 @@ def _rule_equal(pred: str | None, gold: str | None) -> bool:
             return False
         return all(_rule_equal(x, y) for x, y in zip(parts_a, parts_b))
     return False
+
+
+MATH_VERIFY_DIST = "math-verify"
+
+
+def math_verify_version() -> str | None:
+    """Installed version of the optional ``math-verify`` distribution, or None if not installed.
+
+    Reads package metadata only (``importlib.metadata.version``); never imports math_verify or sympy.
+    """
+    try:
+        return importlib.metadata.version(MATH_VERIFY_DIST)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+    except Exception:
+        return None
 
 
 @functools.lru_cache(maxsize=None)

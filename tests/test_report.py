@@ -1035,7 +1035,7 @@ def test_summary_cards_order(tmp_path):
     html = _render(_lineage_run(tmp_path))
     cards = [c.attrs.get("data-card") for c in find_elements(element_by_id(html, "summary").html,
                                                                cls="card", tag="div") if "data-card" in c.attrs]
-    assert cards == ["round", "status", "skills", "target-usage", "optimizer-usage"]
+    assert cards == ["round", "status", "skills", "target-usage", "optimizer-usage", "scoring"]
 
 
 def test_summary_running(tmp_path):

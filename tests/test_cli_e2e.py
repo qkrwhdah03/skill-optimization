@@ -103,7 +103,10 @@ def test_run_basic_files(opro_run):
         saved = yaml.safe_load(f)
     assert saved["llm"]["target"]["backend"] == "mock"
     assert saved["optimizer"]["name"] == "opro"
-    assert "seed" in read_json(run / "meta.json")
+    meta = read_json(run / "meta.json")
+    assert "seed" in meta
+    assert isinstance(meta.get("scoring"), dict) and "math_verify" in meta["scoring"]
+    assert meta["scoring"]["math_verify"] is None or isinstance(meta["scoring"]["math_verify"], str)
 
 
 def test_run_json(opro_run):
@@ -421,6 +424,9 @@ def test_eval_only_default(tmp_path):
     assert not (run / "selection.json").exists()
     assert not (run / "rounds").exists()
     assert not (run / "run.json").exists()
+    meta = read_json(run / "meta.json")
+    assert isinstance(meta.get("scoring"), dict) and "math_verify" in meta["scoring"]
+    assert meta["scoring"]["math_verify"] is None or isinstance(meta["scoring"]["math_verify"], str)
 
 
 def test_eval_only_split_val(tmp_path):

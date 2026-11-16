@@ -11,6 +11,7 @@ from typing import Any
 
 import yaml
 
+from .benchmarks.math_answer import math_verify_version
 from .config import resolve_path
 from .evaluator import EvalResult, SkillEvaluation
 from .llm import UsageSnapshot
@@ -75,6 +76,7 @@ class RunDir:
                 "created_at": datetime.now().isoformat(),
                 "argv": list(sys.argv),
                 "python": platform.python_version(),
+                "scoring": {"math_verify": math_verify_version()},
             },
         )
 
