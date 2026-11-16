@@ -19,7 +19,12 @@ OPTIMIZER_REGISTRY = Registry("optimizer")
 
 
 class Optimizer(ABC):
-    """The user's algorithm. The framework never judges; everything inside is the algorithm's choice."""
+    """The user's algorithm. The framework never judges; everything inside is the algorithm's choice.
+
+    Returned skills may optionally carry ``origin: SkillOrigin`` (parents, operation, note) describing what they
+    were derived from; the run report shows it verbatim under "Prompt evolution". The framework does not
+    interpret, validate against the history, or judge it.
+    """
 
     def __init__(self, llm: BaseLLM, **params) -> None:
         self.llm = llm

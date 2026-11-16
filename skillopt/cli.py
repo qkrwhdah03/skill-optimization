@@ -18,6 +18,7 @@ from .evaluator import EvalResult, Evaluator, SkillEvaluation, build_benchmark_s
 from .llm import build_role_llms
 from .llm.base import UsageSnapshot
 from .logs import LEVELS, setup_logging
+from . import report as run_report
 from .optimizer import build_optimizer, optimize
 from .runlog import RunDir, set_seed
 from .skills import Skill
@@ -149,6 +150,14 @@ def _loop_settings(cfg: dict) -> tuple[dict, int]:
     return opt_cfg, max_iterations
 
 
+def _write_report(path: Path) -> None:
+    """(Re)write ``<run>/report.html``; a failure is a WARNING, never fatal to the run."""
+    try:
+        run_report.write_report(path)
+    except Exception as exc:
+        logger.warning(f"report not written: {exc}")
+
+
 def run_loop(cfg: dict) -> Path:
     """Run the optimize loop on split ``train``, saving every round; returns the run dir."""
     bench_cfgs = _benchmark_configs(cfg)
@@ -175,6 +184,7 @@ def run_loop(cfg: dict) -> Path:
         run.save_usage("optimizer", opt_usage)
         for ev in evaluations:
             _log_evaluation(ev, f"round {index}")
+        _write_report(run.path)
 
     logger.info(f"run dir: {run.path}")
     result = optimize(optimizer, evaluator, max_iterations, on_round=on_round)
@@ -186,6 +196,7 @@ def run_loop(cfg: dict) -> Path:
     tgt_usage, opt_usage = target.usage.snapshot(), optimizer_llm.usage.snapshot()
     run.save_usage("target", tgt_usage)
     run.save_usage("optimizer", opt_usage)
+    _write_report(run.path)
     logger.info(f"finished: stop_reason={result.stop_reason} rounds={len(result.history)}")
     logger.info(f"usage target: {_fmt_usage(tgt_usage)}")
     logger.info(f"usage optimizer: {_fmt_usage(opt_usage)}")
@@ -229,7 +240,7 @@ def run_eval_only(cfg: dict) -> Path:
     for i, skill in enumerate(skills, 1):
         logger.info(f"skill {i}/{len(skills)}: {skill.id}")
         evaluation = evaluator.evaluate_skill(skill, split, limit)
-        run.save_skill(skill)
+        run.save_skill(skill, evaluation.skill_tokens)
         run.save_evaluation(evaluation)
         summaries.append(evaluation.summary())
         _log_evaluation(evaluation)

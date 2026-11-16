@@ -372,7 +372,7 @@ def test_save_round_writes_files(tmp_path):
     d = rd.path / "rounds" / "000"
     assert out == d
     for sk, e in zip((s1, s2), evs):
-        assert read_json(d / "skills" / f"{sk.id}.json") == sk.to_dict()
+        assert read_json(d / "skills" / f"{sk.id}.json") == {**sk.to_dict(), "num_tokens": e.skill_tokens}
         assert Skill.from_dict(read_json(d / "skills" / f"{sk.id}.json")) == sk
         for key, r in e.results.items():
             jl = d / "results" / key / f"{sk.id}.jsonl"

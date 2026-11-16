@@ -47,6 +47,7 @@ class Mine(Optimizer):                                        # self.llm, self.p
 - Add one file to `skillopt/optimizer/algorithms/` and set `optimizer: {name: mine, ...}`.
 - Fill in the template `my_optimizer.py`; `opro.py` is a worked example.
 - Baseline skills `direct`, `cot`, `cod`: `get_baseline` in `skillopt/baselines.py`.
+- Optional: attach `origin=SkillOrigin(parents=[...], operation="...", note="...")` to a returned `Skill`; the run report shows it as is.
 
 ## Evaluator results
 
@@ -114,6 +115,7 @@ Progress logs go to stderr (INFO default): `--log-level DEBUG|INFO|WARNING|ERROR
 ```
 runs/<timestamp>_<name>/
 ├── config.yaml, meta.json, run.json
+├── report.html                              run report (rewritten every round)
 ├── usage/{target,optimizer}.json
 └── rounds/000/                              000 = initial prompts, 001+ = update() outputs
     ├── skills/<skill_id>.json
@@ -123,6 +125,34 @@ runs/<timestamp>_<name>/
 ```
 
 `--eval-only` writes `runs/<timestamp>_<name>_eval/`.
+
+`skills/<skill_id>.json` holds the skill (with `origin`, or null) plus `num_tokens`: the size of the skill itself
+(instruction + few-shot demos) in target-tokenizer tokens, null if the tokenizer is unavailable.
+
+## Run report
+
+`runs/<run>/report.html` is one self-contained page (no server, no external files, light and dark mode). It is
+rewritten after every round and refreshes itself every 5 seconds while the run is in progress, keeping the
+selected node, the tree view and the scroll position; open it in a browser during or after training. To rebuild
+it from a saved run:
+
+```bash
+python -m skillopt.report runs/<run>
+```
+
+- Prompt evolution tree (first): one column per round, one node per evaluated skill with per-benchmark accuracy
+  bars and avg output tokens, edges from what it was derived from. Node color is the operation only. Drag to pan,
+  scroll or use the buttons to zoom; hover to highlight ancestors and descendants. An optimizer describes origins
+  with `SkillOrigin` (`parents`: ids, primary first; `operation`: free label; `note`: free text); without it the
+  report shows `parent_id`.
+- Detail panel: click a node to see the full instruction, skill size (`num_tokens`), parents and children, the
+  optimizer note, a word diff against the first parent, per-benchmark metrics and a few incorrect items.
+- Summary cards: round, status, skill counts, cumulative token usage.
+- Per-benchmark charts: accuracy and avg output tokens by round; click a point to open that skill.
+- Skills table (collapsed): every evaluated skill in saved order with accuracy, tokens and truncation rate.
+
+The report only displays what was saved; it never ranks or picks skills. Only you can sort the table, by
+clicking a column header.
 
 ## Models
 

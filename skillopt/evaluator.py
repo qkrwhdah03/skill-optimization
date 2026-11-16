@@ -7,6 +7,8 @@ The Evaluator only measures; it never aggregates, compares or judges. Its ONE fi
     SkillEvaluation.split            e.g. "train" (the split evaluated every loop round)
     SkillEvaluation.results          {benchmark key (config order): EvalResult}; benchmarks without the split
                                      are skipped
+    SkillEvaluation.skill_tokens     size of the skill itself (``skill_text``) in target-tokenizer tokens; None
+                                     if the tokenizer is unavailable (not part of ``summary()``)
     EvalResult                       n, accuracy, avg_input_tokens, avg_output_tokens (thinking INCLUDED),
                                      avg_reasoning_tokens, avg_total_tokens, avg_latency, num_truncated,
                                      truncation_rate, failures(k),
@@ -22,7 +24,7 @@ from dataclasses import dataclass
 
 from .benchmarks import Benchmark, build_benchmark
 from .llm import BaseLLM, TokenUsage
-from .skills import Skill
+from .skills import Skill, skill_text
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +181,7 @@ class SkillEvaluation:
     skill: Skill
     split: str
     results: dict[str, EvalResult]
+    skill_tokens: int | None = None  # size of the skill itself in target-tokenizer tokens (None = unavailable)
 
     @property
     def skill_id(self) -> str:
@@ -213,6 +216,7 @@ class Evaluator:
         self.llm = llm
         self.benchmarks: list[BenchmarkSpec] = specs
         self.batch_size = int(batch_size)
+        self._size_warned = False
 
     @property
     def benchmark_keys(self) -> list[str]:
@@ -223,6 +227,16 @@ class Evaluator:
             return self._specs[key]
         except KeyError:
             raise KeyError(f"unknown benchmark key '{key}'; available: {', '.join(self._specs)}") from None
+
+    def skill_tokens(self, skill: Skill) -> int | None:
+        """Size of ``skill_text(skill)`` in target-tokenizer tokens; None (one WARNING per Evaluator) on error."""
+        try:
+            return self.llm.count_tokens(skill_text(skill))
+        except Exception as exc:
+            if not self._size_warned:
+                self._size_warned = True
+                logger.warning(f"skill size unavailable: {exc}")
+            return None
 
     def evaluate_split(self, skill: Skill, key: str, split: str, limit: int | None = None) -> EvalResult:
         benchmark = self._spec(key).benchmark
@@ -273,10 +287,11 @@ class Evaluator:
                 f"{key}: {', '.join(spec.benchmark.splits)}" for key, spec in self._specs.items()
             )
             raise ValueError(f"no benchmark provides split '{split}' (available splits: {available})")
+        skill_tokens = self.skill_tokens(skill)
         results: dict[str, EvalResult] = {}
         for key in keys:
             results[key] = self.evaluate_split(skill, key, split, limit)
-        return SkillEvaluation(skill=skill, split=split, results=results)
+        return SkillEvaluation(skill=skill, split=split, results=results, skill_tokens=skill_tokens)
 
     def evaluate(self, skills: list[Skill], split: str = "train", limit: int | None = None) -> list[SkillEvaluation]:
         """Evaluate every skill on every benchmark; one ``SkillEvaluation`` per skill, same order as ``skills``."""

@@ -10,9 +10,13 @@ Each of the ``num_candidates`` slots gets up to ``1 + max_retries`` generations;
 empty, a duplicate of a known instruction, or truncated (hit max_tokens) without a complete ``<skill>`` block.
 Rejections are logged at DEBUG; if fewer than ``num_candidates`` prompts are produced, one WARNING summarizes why
 (an empty result stops the loop).
+
+Every returned skill carries a ``SkillOrigin``: baselines are ``operation="initial"``; proposals are
+``operation="opro"`` with ``parents`` = the top-ranked skill first, then the other instructions shown in the meta-prompt.
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
 
@@ -20,7 +24,7 @@ from skillopt.baselines import get_baseline
 from skillopt.evaluator import EvalResult, SkillEvaluation
 from skillopt.llm import BaseLLM
 from skillopt.optimizer.base import Optimizer, register_optimizer
-from skillopt.skills import FewShotExample, Skill
+from skillopt.skills import FewShotExample, Skill, SkillOrigin
 
 _SKILL_RE = re.compile(r"<skill>(.*?)</skill>", re.DOTALL | re.IGNORECASE)
 
@@ -76,7 +80,13 @@ class OPROOptimizer(Optimizer):
         self.gen_kwargs = dict(gen_kwargs)
 
     def initial_prompts(self) -> list[Skill]:
-        return [get_baseline(name) for name in self.initial]
+        return [
+            dataclasses.replace(
+                get_baseline(name),
+                origin=SkillOrigin(parents=[], operation="initial", note=f"baseline '{name}'"),
+            )
+            for name in self.initial
+        ]
 
     def build_meta_prompt(self, evals: list[SkillEvaluation]) -> str:
         top = _rank(evals)[: self.top_k]
@@ -129,6 +139,16 @@ class OPROOptimizer(Optimizer):
         ranked = _rank(evals)
         best = ranked[0][0].skill if ranked else None
         meta_prompt = self.build_meta_prompt(evals)
+        shown = ranked[: self.top_k]
+        parents: list[str] = [best.id] if best else []
+        for ev, _, _ in shown:
+            if ev.skill_id not in parents:
+                parents.append(ev.skill_id)
+        note = (
+            f"rewritten from the top {len(shown)} instructions in the meta-prompt (this optimizer's ranking: "
+            f"mean accuracy desc, then mean output tokens asc); few-shot and failure examples from "
+            f"{best.id if best else 'none'}"
+        )
 
         seen = {ev.skill.instruction.strip() for ev in evals}
         used_ids = {ev.skill_id for ev in evals}
@@ -174,6 +194,7 @@ class OPROOptimizer(Optimizer):
                         few_shot=few_shot,
                         parent_id=best.id if best else None,
                         metadata={"optimizer": "opro", "iteration": iteration, "optimizer_model": self.llm.model},
+                        origin=SkillOrigin(parents=list(parents), operation="opro", note=note),
                     )
                 )
                 break

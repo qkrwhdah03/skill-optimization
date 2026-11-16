@@ -8,6 +8,10 @@
   ``avg_total_tokens``, ``failures(k)``, ``items``). ``history``: earlier rounds, oldest first.
 - Params: every key of ``optimizer:`` in configs/config.yaml except ``name`` -> ``self.params`` / ``__init__`` kwargs.
   ``self.llm`` is the optimizer LLM (``self.llm.generate(prompt)``).
+- Optional: tell the run report what you derived each skill from by attaching a ``SkillOrigin`` (shown verbatim
+  under "Prompt evolution"; the framework never interprets it), e.g.
+  ``Skill(id=..., instruction=..., parent_id=p.id, origin=SkillOrigin(parents=[p.id], operation="mutate",
+  note="why"))`` with ``from skillopt.skills import SkillOrigin``. Leaving it out is fine.
 - Worked example: ``opro.py`` in this folder.
 """
 from __future__ import annotations

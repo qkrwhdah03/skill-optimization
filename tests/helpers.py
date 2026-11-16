@@ -112,3 +112,103 @@ def make_evaluation(skill_id: str, metrics: dict, n: int = 4,
                                    input_tokens=input_tokens, benchmark=key, split=split,
                                    question_tag=f"{sid}@{key}")
     return SkillEvaluation(skill=skill, split=split, results=results)
+
+
+# --- HTML inspection (report tests) ------------------------------------------------
+
+_VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
+
+
+class HtmlElement:
+    """One parsed element: ``tag``, ``attrs`` (dict), ``html`` (outer HTML slice of the source)."""
+
+    def __init__(self, source: str, tag: str, attrs: dict, start: int) -> None:
+        self.source = source
+        self.tag = tag
+        self.attrs = attrs
+        self.start = start
+        self.end = len(source)
+
+    @property
+    def html(self) -> str:
+        return self.source[self.start:self.end]
+
+    @property
+    def classes(self) -> list:
+        return (self.attrs.get("class") or "").split()
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<{self.tag} {self.attrs}>"
+
+
+def html_elements(source: str) -> list:
+    """Every element of ``source`` in document order (tolerant: unclosed elements end at their parent's end)."""
+    from html.parser import HTMLParser
+
+    line_starts = [0]
+    for i, c in enumerate(source):
+        if c == "\n":
+            line_starts.append(i + 1)
+
+    class _Collector(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=True)
+            self.stack: list = []
+            self.elements: list = []
+
+        def _offset(self) -> int:
+            line, col = self.getpos()
+            return line_starts[line - 1] + col
+
+        def _new(self, tag, attrs) -> HtmlElement:
+            el = HtmlElement(source, tag, {k: (v if v is not None else "") for k, v in attrs}, self._offset())
+            self.elements.append(el)
+            return el
+
+        def handle_starttag(self, tag, attrs):
+            el = self._new(tag, attrs)
+            if tag in _VOID_TAGS:
+                el.end = el.start + len(self.get_starttag_text() or "")
+            else:
+                self.stack.append(el)
+
+        def handle_startendtag(self, tag, attrs):
+            el = self._new(tag, attrs)
+            el.end = el.start + len(self.get_starttag_text() or "")
+
+        def handle_endtag(self, tag):
+            pos = self._offset()
+            close = source.find(">", pos)
+            end = close + 1 if close >= 0 else len(source)
+            for i in range(len(self.stack) - 1, -1, -1):
+                if self.stack[i].tag == tag:
+                    for el in self.stack[i:]:
+                        el.end = end
+                    del self.stack[i:]
+                    break
+
+    p = _Collector()
+    p.feed(source)
+    p.close()
+    return p.elements
+
+
+def find_elements(source: str, cls: str | None = None, tag: str | None = None, **attrs) -> list:
+    """Elements with class token ``cls`` / tag ``tag`` / exact attribute values (``data_round`` -> ``data-round``)."""
+    want = {k.replace("_", "-"): str(v) for k, v in attrs.items()}
+    out = []
+    for el in html_elements(source):
+        if cls is not None and cls not in el.classes:
+            continue
+        if tag is not None and el.tag != tag:
+            continue
+        if any(el.attrs.get(k) != v for k, v in want.items()):
+            continue
+        out.append(el)
+    return out
+
+
+def element_by_id(source: str, element_id: str):
+    """The first element with ``id == element_id`` (None if absent)."""
+    found = find_elements(source, id=element_id)
+    return found[0] if found else None
