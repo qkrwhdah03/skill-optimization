@@ -48,7 +48,7 @@ def test_fp16_preset_contents():
     assert cfg["backend"] == "vllm"
     assert cfg["model"] == "Qwen/Qwen3-8B"
     assert cfg["engine"]["dtype"] == "float16"
-    assert cfg["engine"]["gpu_memory_utilization"] == 0.85
+    assert cfg["engine"]["gpu_memory_utilization"] == 0.92
 
 
 def test_bf16_preset_dtype_unchanged():
@@ -85,7 +85,7 @@ def test_resolved_config_fp16_shared_engine():
         assert role_cfg["engine"]["dtype"] == "float16"
     # optimizer has a generation override; engine_key ignores generation, so the engine is shared
     assert engine_key(target) == engine_key(optimizer)
-    assert check_vram_budget(cfg["llm"], 24) == pytest.approx(20.4, abs=0.5)
+    assert check_vram_budget(cfg["llm"], 24) == pytest.approx(22.08, abs=0.05)
 
 
 # --- AC7: switching back to bf16 via overrides -------------------------------------
@@ -97,7 +97,7 @@ def test_override_to_bf16_preset_shares_engine():
     assert target["engine"]["dtype"] == "bfloat16"
     assert optimizer["engine"]["dtype"] == "bfloat16"
     assert engine_key(target) == engine_key(optimizer)
-    assert check_vram_budget(cfg["llm"], 24) == pytest.approx(20.4, abs=0.5)
+    assert check_vram_budget(cfg["llm"], 24) == pytest.approx(22.08, abs=0.05)
 
 
 # --- AC8: removed preset names no longer resolve -----------------------------------
@@ -136,3 +136,27 @@ def test_readme_has_no_removed_preset_names(s):
 @pytest.mark.parametrize("s", FORBIDDEN_NAMES)
 def test_config_yaml_has_no_removed_preset_names(s):
     assert s not in (CONFIGS / "config.yaml").read_text(encoding="utf-8"), s
+
+
+# --- loop 2026-11-16-003: 32k context presets for long-reasoning benchmarks --------
+
+@pytest.mark.parametrize("name", ["qwen3-8b-fp16-vllm", "qwen3-8b-vllm"])
+def test_vllm_preset_32k_context(name):
+    cfg = _load_preset(name)
+    assert cfg["engine"]["max_model_len"] == 32768
+    assert cfg["engine"]["gpu_memory_utilization"] == 0.92
+    assert cfg["generation"]["max_tokens"] == 30720
+
+
+def test_default_config_vram_32k_presets_fit():
+    cfg = load_config(CONFIGS / "config.yaml")
+    total = check_vram_budget(cfg["llm"], 24)
+    assert total == pytest.approx(0.92 * 24, abs=0.05)
+    assert total <= 24
+
+
+def test_optimizer_generation_unchanged():
+    cfg = load_config(CONFIGS / "config.yaml")
+    gen = cfg["llm"]["optimizer"]["generation"]
+    assert gen["max_tokens"] == 1024
+    assert gen["enable_thinking"] is False

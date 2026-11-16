@@ -43,6 +43,17 @@ _MOCK_BENCHMARK_OVERRIDES: dict[str, list[tuple[str, str]]] = {
         ("train", "2"),
         ("val", "2"),
     ],
+    "math500": [("source", "local"), ("data_dir", "data/sample/math500"), ("train", "2"), ("val", "2")],
+    "aime2024": [("source", "local"), ("data_dir", "data/sample/aime2024")],
+    "aime2025": [("source", "local"), ("data_dir", "data/sample/aime2025")],
+    "amc2023": [("source", "local"), ("data_dir", "data/sample/amc2023")],
+    "bbeh": [
+        ("source", "local"),
+        ("data_dir", "data/sample/bbeh"),
+        ("tasks", "all"),
+        ("train", "2"),
+        ("val", "2"),
+    ],
 }
 
 

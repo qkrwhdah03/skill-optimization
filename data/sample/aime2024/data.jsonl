@@ -1,0 +1,4 @@
+{"id": 0, "problem": "Find the number of positive integers $n \\le 100$ that are multiples of 4.", "answer": "025"}
+{"id": 1, "problem": "Find the remainder when $2^{10}$ is divided by $1000$.", "answer": "24"}
+{"id": 2, "problem": "Find the sum of the positive divisors of $28$.", "answer": "56"}
+{"id": 3, "problem": "A square has perimeter $48$. Find its area.", "answer": "144"}

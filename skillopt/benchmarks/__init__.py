@@ -2,6 +2,9 @@
 from .base import Benchmark, Example, build_benchmark, get_benchmark_class, register_benchmark
 from .gsm8k import GSM8K
 from .bbh import BBH, BBH_TASK_GROUPS, BBH_TASKS
+from .pooled import PooledBenchmark
+from .math_sets import AIME2024, AIME2025, AMC2023, MATH500, MathBenchmark
+from .bbeh import BBEH, BBEH_TASKS
 
 __all__ = [
     "Benchmark",
@@ -13,4 +16,12 @@ __all__ = [
     "BBH",
     "BBH_TASKS",
     "BBH_TASK_GROUPS",
+    "PooledBenchmark",
+    "MathBenchmark",
+    "MATH500",
+    "AIME2024",
+    "AIME2025",
+    "AMC2023",
+    "BBEH",
+    "BBEH_TASKS",
 ]

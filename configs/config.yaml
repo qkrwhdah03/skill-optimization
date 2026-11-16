@@ -8,7 +8,7 @@ seed: 0
 run: {root: runs, name: run}          # outputs go to runs/<timestamp>_<name>/
 hardware: {vram_gb: 24}               # VRAM budget checked before any model is built
 
-# LLM roles. Same preset for both -> ONE shared vLLM engine (~0.85 * 24 = 20.4 GB).
+# LLM roles. Same preset for both -> ONE shared vLLM engine (~0.92 * 24 = 22.1 GB).
 # Swap a model by preset name, e.g. bf16 on compute capability >= 8.0:
 #   --set llm.target.preset=qwen3-8b-vllm --set llm.optimizer.preset=qwen3-8b-vllm
 llm:
@@ -19,7 +19,8 @@ llm:
     generation: {temperature: 0.8, enable_thinking: false, max_tokens: 1024}
 
 # Benchmarks the Evaluator measures (raw, per benchmark), keyed by name. Splits: train (evaluated every loop
-# round), val, test, heldout (bbh only); val/test/heldout only via --eval-only --split <split>.
+# round), val, test, heldout (bbh/bbeh only); val/test/heldout only via --eval-only --split <split>.
+# A benchmark without the requested split is skipped, so test-only sets never run in the loop.
 # GSM8K: official train 7,473 / test 1,319, no task subdivision (so no tasks/heldout options).
 #   train = seeded sample of the official train set; val = disjoint sample of it; test = official test (1,319).
 # BBH: 27 tasks, 6,511 examples, one official test split per task (250 each, except causal_judgement 187,
@@ -29,9 +30,22 @@ llm:
 #   train / val are PER TASK: each task is shuffled (seeded), first `train` items -> train, next `val` -> val,
 #   the rest of that task -> test.
 #   Default: 26 tasks (all but web_of_lies) -> train 26 x 10 = 260, val 260, test 5,741; heldout web_of_lies 250.
+# Long-reasoning sets ship ONE pool: seeded shuffle, first `train` -> train, next `val` -> val, rest -> test.
+#   train / val are offered only when > 0 (default 0 -> test-only).
+# MATH-500: 500 problems -> default train 50 / val 50 / test 400. Answers in \boxed{}, compared by equivalence.
+# BBEH (BIG-Bench Extra Hard): 23 tasks, 4,520 items; train / val are PER TASK -> default 46 / 46 / 4,428.
+#   mini: true keeps BBEH-mini (20 per task, 460 items). tasks / heldout: task names or `all` (no groups).
+# AIME 2024 (30), AIME 2025 (30), AMC 2023 (40): test-only unless `train` / `val` > 0,
+#   so they never run in the loop.
+# Long-reasoning items can run up to ~30k tokens each; lower `train` or use --limit to bound cost.
 benchmarks:
-  gsm8k: {source: hf, train: 200, val: 200}       # totals; test = official test, always all 1,319
-  bbh: {source: hf, tasks: all, heldout: [web_of_lies], train: 10, val: 10}   # train/val per task; test = rest of each task
+  gsm8k:    {source: hf, train: 200, val: 200}       # totals; test = official test, always all 1,319
+  bbh:      {source: hf, tasks: all, heldout: [web_of_lies], train: 10, val: 10}   # train/val per task; test = rest of each task
+  math500:  {source: hf, train: 50, val: 50}
+  bbeh:     {source: hf, tasks: all, mini: false, train: 2, val: 2}   # train/val per task
+  aime2024: {source: hf}
+  aime2025: {source: hf}
+  amc2023:  {source: hf}
 
 evaluator: {batch_size: 64}
 

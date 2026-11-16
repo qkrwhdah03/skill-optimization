@@ -18,7 +18,9 @@ SNAPSHOT_KEYS = {"calls", "input_tokens", "output_tokens", "reasoning_tokens", "
 EVAL_SUMMARY_KEYS = {"skill_id", "benchmark", "split", "n", "accuracy", "avg_input_tokens",
                      "avg_output_tokens", "avg_reasoning_tokens", "avg_total_tokens", "avg_latency",
                      "num_truncated", "truncation_rate"}
-BENCH_KEYS = ["gsm8k", "bbh"]
+BENCH_KEYS = ["gsm8k", "bbh", "math500", "bbeh"]  # benchmarks with a train split (evaluated every round)
+TEST_ONLY_KEYS = ["aime2024", "aime2025", "amc2023"]
+ALL_KEYS = ["gsm8k", "bbh", "math500", "bbeh", "aime2024", "aime2025", "amc2023"]
 OPRO = "optimizer.name=opro"
 
 
@@ -166,6 +168,19 @@ def test_round0_train_sizes(opro_run):
     for b in ("direct", "cot", "cod"):
         assert read_json(d / "gsm8k" / f"{b}.summary.json")["n"] == 4
         assert read_json(d / "bbh" / f"{b}.summary.json")["n"] == 4
+        assert read_json(d / "math500" / f"{b}.summary.json")["n"] == 2
+        assert read_json(d / "bbeh" / f"{b}.summary.json")["n"] == 6
+
+
+def test_rounds_skip_test_only_benchmarks(opro_run):
+    _, run = opro_run
+    for rnd in _rounds(run):
+        d = run / "rounds" / rnd
+        for entry in read_json(d / "summary.json"):
+            for key in TEST_ONLY_KEYS:
+                assert key not in entry["benchmarks"], (rnd, key)
+        for key in TEST_ONLY_KEYS:
+            assert not (d / "results" / key).exists(), (rnd, key)
 
 
 def test_round_usage_cumulative(opro_run):
@@ -356,7 +371,8 @@ def test_vram_guard(tmp_path):
 
 def test_bbh_no_heldout_leakage(opro_run):
     _, run = opro_run
-    jsonls = list((run / "rounds").glob("*/results/*/*.jsonl"))
+    # BBEH has its own (non-heldout) web_of_lies task; only BBH results are checked here.
+    jsonls = list((run / "rounds").glob("*/results/bbh/*.jsonl"))
     assert jsonls
     for jl in jsonls:
         for row in read_jsonl(jl):
@@ -391,6 +407,10 @@ def test_eval_only_default(tmp_path):
         g, b = s["benchmarks"]["gsm8k"], s["benchmarks"]["bbh"]
         assert g["split"] == "test" and g["n"] == 6
         assert b["split"] == "test" and b["n"] == 8
+        assert list(s["benchmarks"]) == ALL_KEYS
+        for key, n in (("math500", 4), ("aime2024", 4), ("aime2025", 4), ("amc2023", 4), ("bbeh", 6)):
+            assert s["benchmarks"][key]["split"] == "test", key
+            assert s["benchmarks"][key]["n"] == n, key
         jl = run / "results" / "test" / "gsm8k" / f"{s['skill_id']}.jsonl"
         assert jl.is_file()
         assert len(read_jsonl(jl)) == g["n"]
@@ -411,6 +431,12 @@ def test_eval_only_split_val(tmp_path):
         assert s["benchmarks"]["gsm8k"]["n"] == 2
         assert s["benchmarks"]["bbh"]["split"] == "val"
         assert s["benchmarks"]["bbh"]["n"] == 4
+        assert s["benchmarks"]["math500"]["split"] == "val"
+        assert s["benchmarks"]["math500"]["n"] == 2
+        assert s["benchmarks"]["bbeh"]["split"] == "val"
+        assert s["benchmarks"]["bbeh"]["n"] == 6
+        for key in TEST_ONLY_KEYS:
+            assert key not in s["benchmarks"], key
 
 
 def test_eval_only_split_train(tmp_path):
@@ -442,6 +468,8 @@ def test_eval_only_split_heldout(tmp_path):
         assert jl.is_file()
         assert all(str(r["example_id"]).startswith("web_of_lies") for r in read_jsonl(jl))
     assert not (run / "results" / "heldout" / "gsm8k").exists()
+    for key in ["bbeh", "math500"] + TEST_ONLY_KEYS:
+        assert not (run / "results" / "heldout" / key).exists(), key
 
 
 def test_eval_only_split_unknown_rejected(tmp_path):
@@ -453,7 +481,7 @@ def test_eval_only_limit(tmp_path):
     summary = _summary(main(_base(tmp_path) + ["--eval-only", "--limit", "1"]))
     assert len(summary) == 3
     for s in summary:
-        assert set(s["benchmarks"]) == set(BENCH_KEYS)
+        assert set(s["benchmarks"]) == set(ALL_KEYS)
         assert all(r["n"] == 1 for r in s["benchmarks"].values())
 
 
@@ -616,7 +644,7 @@ def test_mock_overrides_applied_config():
     assert cfg["optimizer"]["name"] == "my_optimizer"
     assert "optimize" not in cfg
     specs = build_benchmark_specs(cfg["benchmarks"], seed=0)
-    assert [s.key for s in specs] == ["gsm8k", "bbh"]
+    assert [s.key for s in specs] == ALL_KEYS
     assert cfg["benchmarks"]["gsm8k"]["train"] == 4
     assert cfg["benchmarks"]["gsm8k"]["val"] == 2
     assert cfg["benchmarks"]["bbh"]["train"] == 2

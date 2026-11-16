@@ -221,4 +221,4 @@ def test_qwen3_8b_vllm_preset():
 def test_config_targets_qwen3_8b_shared_engine():
     cfg = load_config(CONFIGS / "config.yaml")
     assert cfg["llm"]["target"]["model"] == "Qwen/Qwen3-8B"
-    assert check_vram_budget(cfg["llm"], 24) == pytest.approx(20.4, abs=0.5)
+    assert check_vram_budget(cfg["llm"], 24) == pytest.approx(22.08, abs=0.05)

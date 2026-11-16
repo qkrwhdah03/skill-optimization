@@ -1,0 +1,6 @@
+{"input": "Alice tells the truth. Bob says Alice lies. Carol says Bob lies. Question 1: Does Alice tell the truth? Question 2: Does Bob tell the truth? Question 3: Does Carol tell the truth? Answer each question with yes or no, separated by commas.", "target": "yes, no, yes", "mini": 1}
+{"input": "Dan lies. Eve says Dan tells the truth. Question 1: Does Dan tell the truth? Question 2: Does Eve tell the truth? Answer each question with yes or no, separated by commas.", "target": "no, no", "mini": 0}
+{"input": "Fay tells the truth. Gus says Fay tells the truth. Question 1: Does Gus tell the truth? Answer with yes or no.", "target": "yes", "mini": 1}
+{"input": "Hal lies. Ivy says Hal lies. Jon says Ivy lies. Question 1: Does Ivy tell the truth? Question 2: Does Jon tell the truth? Answer each question with yes or no, separated by commas.", "target": "yes, no", "mini": 0}
+{"input": "Kim tells the truth. Lee says Kim lies. Question 1: Does Lee tell the truth? Answer with yes or no.", "target": "no", "mini": 0}
+{"input": "Max lies. Ned says Max lies. Oz says Ned tells the truth. Question 1: Does Ned tell the truth? Question 2: Does Oz tell the truth? Answer each question with yes or no, separated by commas.", "target": "yes, yes", "mini": 0}

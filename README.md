@@ -24,7 +24,8 @@ Python >= 3.10. Real runs need one 24 GB GPU; `--mock` needs none.
 |---|---|---|
 | `pip install -e .` | `pyyaml` | core |
 | `pip install -e .[dev]` | `pytest` | tests, `--mock` |
-| `pip install -e .[data]` | `datasets` | GSM8K / BBH from Hugging Face |
+| `pip install -e .[data]` | `datasets` | all benchmarks from Hugging Face (GSM8K, BBH, MATH-500, AIME, AMC, BBEH) |
+| `pip install -e .[math]` | `math-verify` (SymPy) | symbolic-equivalence math scoring (MATH-500, ...), optional |
 | `pip install -e .[vllm]` | `vllm` | `*-vllm` presets (default), Linux / WSL2 only |
 | `pip install -e .[hf]` | `torch`, `transformers`, `accelerate`, `bitsandbytes` | `hf` backend (no bundled preset; add one with `backend: hf`) |
 
@@ -70,6 +71,11 @@ and `truncated` (the generation hit `max_tokens`).
 benchmarks:                                                    # bbh train / val are per task
   gsm8k: {source: hf, train: 200, val: 200}
   bbh:   {source: hf, tasks: all, heldout: [web_of_lies], train: 10, val: 10}
+  math500:  {source: hf, train: 50, val: 50}
+  bbeh:     {source: hf, tasks: all, mini: false, train: 2, val: 2}            # train / val per task
+  aime2024: {source: hf}                                       # test-only
+  aime2025: {source: hf}
+  amc2023:  {source: hf}
 optimizer: {name: my_optimizer}                                # other keys -> constructor
 max_iterations: 5                                              # max update() calls
 eval: {skills: [direct, cot, cod], split: test, limit: null}   # --eval-only only
@@ -96,6 +102,28 @@ Also `llm` (target / optimizer presets), `hardware.vram_gb`, `evaluator.batch_si
 - GSM8K `train` / `val` come from the official train set. BBH has none, so each task is split.
 - The loop runs only `train`; run the others with `--eval-only --split <split>`.
 - BBH `tasks:` / `heldout:` take task names, `algorithmic`, `nlu` or `all` (`BBH_TASK_GROUPS` in `bbh.py`).
+
+### Long-reasoning benchmarks
+
+| Name | Config key | Content | Size | Answer | Links |
+|---|---|---|---|---|---|
+| MATH-500 | `math500` | competition math | 500 | LaTeX in `\boxed{}` | [MATH paper](https://arxiv.org/abs/2103.03874) · [subset](https://arxiv.org/abs/2305.20050) · [HuggingFaceH4/MATH-500](https://huggingface.co/datasets/HuggingFaceH4/MATH-500) |
+| AIME 2024 | `aime2024` | olympiad math | 30 | integer 0-999 | [HuggingFaceH4/aime_2024](https://huggingface.co/datasets/HuggingFaceH4/aime_2024) |
+| AIME 2025 | `aime2025` | olympiad math | 30 | integer 0-999 | [math-ai/aime25](https://huggingface.co/datasets/math-ai/aime25) |
+| AMC 2023 | `amc2023` | competition math | 40 | number | [math-ai/amc23](https://huggingface.co/datasets/math-ai/amc23) |
+| BBEH | `bbeh` | 23 hard reasoning tasks | 4,520 | free-form, task-specific | [paper](https://arxiv.org/abs/2502.19187) · [BBEH/bbeh](https://huggingface.co/datasets/BBEH/bbeh) |
+
+| Split | MATH-500 | BBEH | AIME 2024 / AIME 2025 / AMC 2023 |
+|---|---|---|---|
+| `train` | 50 | 2 per task (46) | — |
+| `val` | 50 | 2 per task (46) | — |
+| `test` | 400 | rest of each task (4,428) | all (30 / 30 / 40) |
+
+- Each ships one pool: seeded shuffle, first `train` -> train, next `val` -> val, rest -> test. `train` / `val`
+  exist only when set > 0, so test-only sets skip the loop (`--eval-only --split test` runs them).
+- Math answers are taken from the last `\boxed{}` and compared by equivalence (`\frac{1}{2}` = `0.5`, `025` = `25`, ...); if the rules disagree and `.[math]` is installed, a Math-Verify symbolic check decides (5 s limit; timeout or parse failure = wrong), otherwise only the rules apply.
+- BBEH uses the official fuzzy matcher; `mini: true` keeps BBEH-mini (20 per task, 460).
+- Long-reasoning items can run up to ~30k tokens each; lower `train` or use `--limit` to bound cost.
 
 ## Running
 
@@ -158,8 +186,8 @@ clicking a column header.
 
 Presets in `configs/models/`: `qwen3-8b-fp16-vllm` (default), `qwen3-8b-vllm` (bf16), `mock`. bf16 needs
 compute capability >= 8.0 (Ampere or newer); use fp16 otherwise (e.g. TITAN RTX, 7.5). On a bf16-capable GPU:
-`--set llm.target.preset=qwen3-8b-vllm --set llm.optimizer.preset=qwen3-8b-vllm`. The default reserves
-0.85 × 24 = 20.4 GB. Roles with the same model share one engine, and `check_vram_budget` stops the run before loading
+`--set llm.target.preset=qwen3-8b-vllm --set llm.optimizer.preset=qwen3-8b-vllm`. Both use the native 32,768-token
+context (no YaRN) with up to 30,720 target max tokens, and reserve 0.92 × 24 = 22.1 GB. Roles with the same model share one engine, and `check_vram_budget` stops the run before loading
 if `hardware.vram_gb` is exceeded. Other models or backends: add a preset file to `configs/models/`.
 
 ## Extending

@@ -14,6 +14,7 @@ dependencies = ["pyyaml"]
 vllm = ["vllm"]
 hf = ["torch", "transformers", "accelerate", "bitsandbytes"]
 data = ["datasets"]
+math = ["math-verify>=0.9"]
 dev = ["pytest"]
 
 [tool.setuptools.packages.find]

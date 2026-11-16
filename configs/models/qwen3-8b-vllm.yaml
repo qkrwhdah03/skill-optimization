@@ -1,15 +1,19 @@
 # Qwen3-8B (bf16, ~16 GB weights) on vLLM. Fits a 24 GB GPU; optimizer + target can share this engine.
 # bf16 needs compute capability >= 8.0 (Ampere or newer); otherwise use qwen3-8b-fp16-vllm.
+# Context: max_model_len 32768 = Qwen3-8B native window (no YaRN). 32,768 tokens of 16-bit KV cache need
+# ~4.5 GiB (144 KiB/token) on top of ~15.3 GiB of weights, hence gpu_memory_utilization 0.92 (0.85 cannot hold it).
+# max_tokens 30720 = 32768 - 2048 prompt headroom; longer prompts are capped by vLLM at max_model_len (flagged truncated).
+# If vLLM reports the KV cache cannot hold max_model_len, raise gpu_memory_utilization toward 0.95 or lower max_model_len.
 backend: vllm
 model: Qwen/Qwen3-8B
 engine:
   dtype: bfloat16
-  gpu_memory_utilization: 0.85
-  max_model_len: 16384
+  gpu_memory_utilization: 0.92
+  max_model_len: 32768
 generation:
   temperature: 0.6
   top_p: 0.95
   top_k: 20
-  max_tokens: 8192
+  max_tokens: 30720
   seed: 0
   enable_thinking: true

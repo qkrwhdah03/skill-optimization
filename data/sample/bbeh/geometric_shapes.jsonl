@@ -1,0 +1,6 @@
+{"input": "A closed path visits the points (0,0), (4,0), (4,4), (0,4) and returns to (0,0). What shape does it draw?\nOptions:\n(A) triangle\n(B) pentagon\n(C) square\n(D) line", "target": "(C)", "mini": 1}
+{"input": "A closed path visits the points (0,0), (6,0), (3,5) and returns to (0,0). What shape does it draw?\nOptions:\n(A) triangle\n(B) square\n(C) hexagon\n(D) circle", "target": "(A)", "mini": 0}
+{"input": "A path goes from (0,0) to (5,5) and stops. What shape does it draw?\nOptions:\n(A) square\n(B) line\n(C) triangle\n(D) kite", "target": "(B)", "mini": 1}
+{"input": "A closed path visits the points (0,0), (6,0), (6,2), (0,2) and returns to (0,0). What shape does it draw?\nOptions:\n(A) rectangle\n(B) triangle\n(C) pentagon\n(D) line", "target": "(A)", "mini": 0}
+{"input": "A closed path visits five points that form a regular five-sided figure and returns to the start. What shape does it draw?\nOptions:\n(A) square\n(B) hexagon\n(C) triangle\n(D) pentagon", "target": "(D)", "mini": 0}
+{"input": "A closed path visits six points that form a regular six-sided figure and returns to the start. What shape does it draw?\nOptions:\n(A) hexagon\n(B) octagon\n(C) square\n(D) line", "target": "(A)", "mini": 0}

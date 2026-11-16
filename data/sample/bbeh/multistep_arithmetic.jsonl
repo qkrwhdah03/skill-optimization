@@ -1,0 +1,6 @@
+{"input": "Compute ((3 + 5) * -6) - 4. Give the final integer.", "target": "-52", "mini": 1}
+{"input": "Compute (12 - 4) * (2 + 1). Give the final integer.", "target": "24", "mini": 0}
+{"input": "Compute (7 * 7) - (10 + 9). Give the final integer.", "target": "30", "mini": 1}
+{"input": "Compute -(5 + 5) * 3 + 1. Give the final integer.", "target": "-29", "mini": 0}
+{"input": "Compute (100 / 4) - 30. Give the final integer.", "target": "-5", "mini": 0}
+{"input": "Compute (2 + 2) * (2 + 2) * 2. Give the final integer.", "target": "32", "mini": 0}

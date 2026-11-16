@@ -1,0 +1,4 @@
+{"id": "0", "problem": "Find the number of ordered pairs $(a, b)$ of positive integers with $a + b = 10$.", "answer": 9}
+{"id": "1", "problem": "Find the remainder when $7^{3}$ is divided by $100$.", "answer": 43}
+{"id": "2", "problem": "Find the least common multiple of $12$ and $18$.", "answer": 36}
+{"id": "3", "problem": "Find $1 + 2 + 3 + \\cdots + 20$.", "answer": 210}
