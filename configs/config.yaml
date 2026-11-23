@@ -46,6 +46,12 @@ benchmarks:
   aime2024: {source: hf}
   aime2025: {source: hf}
   amc2023:  {source: hf}
+  # Non-math reasoning benchmarks (narrative soft reasoning, FOL logic, logic games, multi-hop QA, cross-domain MCQ).
+  musr:       {source: hf, tasks: all, train: 10, val: 10}          # 3 narrative tasks, train/val per task
+  folio:      {source: hf, train: 40, val: 40}                      # formal FOL entailment (official val = test)
+  lsat_ar:    {source: hf, train: 20, val: 20}                      # LSAT analytical logic games
+  strategyqa: {source: hf, train: 40, val: 40}                      # multi-hop implicit commonsense QA
+  mmlu_pro:   {source: hf, categories: non_math, train: 4, val: 4}  # 13 non-math disciplines, train/val per category
 
 evaluator: {batch_size: 64}
 
