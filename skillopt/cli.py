@@ -54,6 +54,23 @@ _MOCK_BENCHMARK_OVERRIDES: dict[str, list[tuple[str, str]]] = {
         ("train", "2"),
         ("val", "2"),
     ],
+    "musr": [
+        ("source", "local"),
+        ("data_dir", "data/sample/musr"),
+        ("tasks", "all"),
+        ("train", "2"),
+        ("val", "2"),
+    ],
+    "folio": [("source", "local"), ("data_dir", "data/sample/folio"), ("train", "2"), ("val", "2")],
+    "lsat_ar": [("source", "local"), ("data_dir", "data/sample/lsat_ar"), ("train", "2"), ("val", "2")],
+    "strategyqa": [("source", "local"), ("data_dir", "data/sample/strategyqa"), ("train", "2"), ("val", "2")],
+    "mmlu_pro": [
+        ("source", "local"),
+        ("data_dir", "data/sample/mmlu_pro"),
+        ("categories", "all"),
+        ("train", "2"),
+        ("val", "2"),
+    ],
 }
 
 

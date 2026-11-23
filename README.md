@@ -73,9 +73,14 @@ benchmarks:                                                    # bbh train / val
   bbh:   {source: hf, tasks: all, heldout: [web_of_lies], train: 10, val: 10}
   math500:  {source: hf, train: 50, val: 50}
   bbeh:     {source: hf, tasks: all, mini: false, train: 2, val: 2}            # train / val per task
-  aime2024: {source: hf}                                       # test-only
-  aime2025: {source: hf}
-  amc2023:  {source: hf}
+  aime2024:   {source: hf}                                       # test-only
+  aime2025:   {source: hf}
+  amc2023:    {source: hf}
+  musr:       {source: hf, tasks: all, train: 10, val: 10}          # 3 narrative tasks, train/val per task
+  folio:      {source: hf, train: 40, val: 40}                      # formal FOL entailment
+  lsat_ar:    {source: hf, train: 20, val: 20}                      # LSAT logic games
+  strategyqa: {source: hf, train: 40, val: 40}                      # multi-hop commonsense QA
+  mmlu_pro:   {source: hf, categories: non_math, train: 4, val: 4}  # 13 non-math disciplines, per category
 optimizer: {name: my_optimizer}                                # other keys -> constructor
 max_iterations: 5                                              # max update() calls
 eval: {skills: [direct, cot, cod], split: test, limit: null}   # --eval-only only
@@ -124,6 +129,20 @@ Also `llm` (target / optimizer presets), `hardware.vram_gb`, `evaluator.batch_si
 - Math answers are taken from the last `\boxed{}` and compared by equivalence (`\frac{1}{2}` = `0.5`, `025` = `25`, ...); if the rules disagree and `.[math]` is installed, a Math-Verify symbolic check decides (5 s limit; timeout or parse failure = wrong), otherwise only the rules apply.
 - BBEH uses the official fuzzy matcher; `mini: true` keeps BBEH-mini (20 per task, 460).
 - Long-reasoning items can run up to ~30k tokens each; lower `train` or use `--limit` to bound cost.
+
+### Non-math reasoning benchmarks
+
+| Name | Config key | Reasoning type | Size (train / val / test) | Answer | Links |
+|---|---|---|---|---|---|
+| MuSR | `musr` | Long-narrative abductive & deductive | 756 across 3 tasks (30 / 30 / 696) | option letter `(A)`–`(E)` | [paper](https://arxiv.org/abs/2310.16049) · [TAUR-Lab/MuSR](https://huggingface.co/datasets/TAUR-Lab/MuSR) |
+| FOLIO | `folio` | Formal first-order logic entailment | 1,204 (40 / 40 / 203 official val) | `True` / `False` / `Uncertain` | [paper](https://arxiv.org/abs/2209.00840) · [tasksource/folio](https://huggingface.co/datasets/tasksource/folio) |
+| LSAT-AR | `lsat_ar` | Constraint satisfaction & logic games | 230 (20 / 20 / 190) | option letter `(A)`–`(E)` | [AGIEval](https://arxiv.org/abs/2304.06364) · [hails/agieval-lsat-ar](https://huggingface.co/datasets/hails/agieval-lsat-ar) |
+| StrategyQA | `strategyqa` | Multi-hop implicit commonsense QA | 2,290 (40 / 40 / 687 official test) | `Yes` / `No` | [paper](https://arxiv.org/abs/2101.02235) · [ChilleD/StrategyQA](https://huggingface.co/datasets/ChilleD/StrategyQA) |
+| MMLU-Pro | `mmlu_pro` | 10-option cross-domain reasoning | 10,681 in `non_math` / 12,032 all (52 / 52 / rest) | option letter `(A)`–`(J)` | [paper](https://arxiv.org/abs/2406.01574) · [TIGER-Lab/MMLU-Pro](https://huggingface.co/datasets/TIGER-Lab/MMLU-Pro) |
+
+- **Chain of Draft tasks:** `gsm8k`, BBH `date_understanding`, and BBH `sports_understanding` are already included under `gsm8k` and `bbh`; `strategyqa` adds multi-hop commonsense QA from Sketch-of-Thought alongside `musr`, `folio`, `lsat_ar`, and `mmlu_pro`.
+- `musr` splits per task (`murder_mysteries`, `object_placements`, `team_allocation`); `mmlu_pro` splits per category (`categories:` accepts `non_math`, `stem`, `humanities_social`, `all`, or category names; `heldout:` works on both).
+- `folio` and `strategyqa` draw disjoint seeded `train` / `val` samples from their official train splits and evaluate `test` on their official held-out sets (`validation` for FOLIO, `test` for StrategyQA).
 
 ## Running
 

@@ -18,9 +18,12 @@ SNAPSHOT_KEYS = {"calls", "input_tokens", "output_tokens", "reasoning_tokens", "
 EVAL_SUMMARY_KEYS = {"skill_id", "benchmark", "split", "n", "accuracy", "avg_input_tokens",
                      "avg_output_tokens", "avg_reasoning_tokens", "avg_total_tokens", "avg_latency",
                      "num_truncated", "truncation_rate"}
-BENCH_KEYS = ["gsm8k", "bbh", "math500", "bbeh"]  # benchmarks with a train split (evaluated every round)
+BENCH_KEYS = ["gsm8k", "bbh", "math500", "bbeh", "musr", "folio", "lsat_ar", "strategyqa", "mmlu_pro"]
 TEST_ONLY_KEYS = ["aime2024", "aime2025", "amc2023"]
-ALL_KEYS = ["gsm8k", "bbh", "math500", "bbeh", "aime2024", "aime2025", "amc2023"]
+ALL_KEYS = [
+    "gsm8k", "bbh", "math500", "bbeh", "aime2024", "aime2025", "amc2023",
+    "musr", "folio", "lsat_ar", "strategyqa", "mmlu_pro",
+]
 OPRO = "optimizer.name=opro"
 
 
@@ -173,6 +176,11 @@ def test_round0_train_sizes(opro_run):
         assert read_json(d / "bbh" / f"{b}.summary.json")["n"] == 4
         assert read_json(d / "math500" / f"{b}.summary.json")["n"] == 2
         assert read_json(d / "bbeh" / f"{b}.summary.json")["n"] == 6
+        assert read_json(d / "musr" / f"{b}.summary.json")["n"] == 6
+        assert read_json(d / "folio" / f"{b}.summary.json")["n"] == 2
+        assert read_json(d / "lsat_ar" / f"{b}.summary.json")["n"] == 2
+        assert read_json(d / "strategyqa" / f"{b}.summary.json")["n"] == 2
+        assert read_json(d / "mmlu_pro" / f"{b}.summary.json")["n"] == 6
 
 
 def test_rounds_skip_test_only_benchmarks(opro_run):
@@ -411,7 +419,10 @@ def test_eval_only_default(tmp_path):
         assert g["split"] == "test" and g["n"] == 6
         assert b["split"] == "test" and b["n"] == 8
         assert list(s["benchmarks"]) == ALL_KEYS
-        for key, n in (("math500", 4), ("aime2024", 4), ("aime2025", 4), ("amc2023", 4), ("bbeh", 6)):
+        for key, n in (
+            ("math500", 4), ("aime2024", 4), ("aime2025", 4), ("amc2023", 4), ("bbeh", 6),
+            ("musr", 6), ("folio", 4), ("lsat_ar", 4), ("strategyqa", 4), ("mmlu_pro", 6),
+        ):
             assert s["benchmarks"][key]["split"] == "test", key
             assert s["benchmarks"][key]["n"] == n, key
         jl = run / "results" / "test" / "gsm8k" / f"{s['skill_id']}.jsonl"
@@ -441,6 +452,9 @@ def test_eval_only_split_val(tmp_path):
         assert s["benchmarks"]["math500"]["n"] == 2
         assert s["benchmarks"]["bbeh"]["split"] == "val"
         assert s["benchmarks"]["bbeh"]["n"] == 6
+        for key, n in (("musr", 6), ("folio", 2), ("lsat_ar", 2), ("strategyqa", 2), ("mmlu_pro", 6)):
+            assert s["benchmarks"][key]["split"] == "val", key
+            assert s["benchmarks"][key]["n"] == n, key
         for key in TEST_ONLY_KEYS:
             assert key not in s["benchmarks"], key
 
@@ -474,7 +488,7 @@ def test_eval_only_split_heldout(tmp_path):
         assert jl.is_file()
         assert all(str(r["example_id"]).startswith("web_of_lies") for r in read_jsonl(jl))
     assert not (run / "results" / "heldout" / "gsm8k").exists()
-    for key in ["bbeh", "math500"] + TEST_ONLY_KEYS:
+    for key in ["bbeh", "math500", "musr", "folio", "lsat_ar", "strategyqa", "mmlu_pro"] + TEST_ONLY_KEYS:
         assert not (run / "results" / "heldout" / key).exists(), key
 
 

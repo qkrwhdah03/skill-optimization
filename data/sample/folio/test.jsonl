@@ -1,0 +1,4 @@
+{"story_id": 101, "premises": "All cedar trees are conifers.\nAll conifers bear cones.", "conclusion": "All cedar trees bear cones.", "label": "True", "example_id": 101}
+{"story_id": 102, "premises": "No square has five sides.\nShape X is a square.", "conclusion": "Shape X has five sides.", "label": "False", "example_id": 102}
+{"story_id": 103, "premises": "Some chemists speak French.\nAll people who speak French enjoy travel.", "conclusion": "All chemists enjoy travel.", "label": "Uncertain", "example_id": 103}
+{"story_id": 104, "premises": "If a train is express, it skips Local Station.\nThe 8:00 train stopped at Local Station.", "conclusion": "The 8:00 train is not express.", "label": "True", "example_id": 104}

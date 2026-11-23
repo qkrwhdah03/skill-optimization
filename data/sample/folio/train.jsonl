@@ -1,0 +1,10 @@
+{"story_id": 1, "premises": "All licensed pilots pass a medical exam.\nNora is a licensed pilot.", "conclusion": "Nora passed a medical exam.", "label": "True", "example_id": 1}
+{"story_id": 2, "premises": "No reptile has feathers.\nEvery gecko is a reptile.", "conclusion": "Some geckos have feathers.", "label": "False", "example_id": 2}
+{"story_id": 3, "premises": "Some astronomers play cello.\nAll cello players read bass clef.", "conclusion": "All astronomers read bass clef.", "label": "Uncertain", "example_id": 3}
+{"story_id": 4, "premises": "If the bridge is closed, commuters take the ferry.\nThe bridge is closed.", "conclusion": "Commuters take the ferry.", "label": "True", "example_id": 4}
+{"story_id": 5, "premises": "Every member who submits early receives a voucher.\nLeo did not receive a voucher.", "conclusion": "Leo submitted early.", "label": "False", "example_id": 5}
+{"story_id": 6, "premises": "People who live in Ward 4 may use the pool.\nMarta uses the pool.", "conclusion": "Marta lives in Ward 4.", "label": "Uncertain", "example_id": 6}
+{"story_id": 7, "premises": "All granite rocks are igneous.\nNo igneous rock is organic.", "conclusion": "No granite rock is organic.", "label": "True", "example_id": 7}
+{"story_id": 8, "premises": "Either the sensor tripped or the gate stayed locked.\nThe sensor did not trip.", "conclusion": "The gate did not stay locked.", "label": "False", "example_id": 8}
+{"story_id": 9, "premises": "Every marathon runner trains outdoors or on a track.\nOmar trains outdoors.", "conclusion": "Omar is a marathon runner.", "label": "Uncertain", "example_id": 9}
+{"story_id": 10, "premises": "All violins are stringed instruments.\nAll stringed instruments produce sound by vibration.", "conclusion": "All violins produce sound by vibration.", "label": "True", "example_id": 10}

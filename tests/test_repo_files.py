@@ -9,7 +9,10 @@ import yaml
 from helpers import CONFIGS, PROJECT_ROOT, read_json
 
 OPT_DIR = PROJECT_ROOT / "skillopt" / "optimizer"
-ALL_BENCHMARK_KEYS = ["gsm8k", "bbh", "math500", "bbeh", "aime2024", "aime2025", "amc2023"]
+ALL_BENCHMARK_KEYS = [
+    "gsm8k", "bbh", "math500", "bbeh", "aime2024", "aime2025", "amc2023",
+    "musr", "folio", "lsat_ar", "strategyqa", "mmlu_pro",
+]
 
 
 # --- AC28: README -----------------------------------------------------------------
@@ -165,6 +168,11 @@ EXPECTED_BENCHMARKS = {
     "aime2024": {"source": "hf"},
     "aime2025": {"source": "hf"},
     "amc2023": {"source": "hf"},
+    "musr": {"source": "hf", "tasks": "all", "train": 10, "val": 10},
+    "folio": {"source": "hf", "train": 40, "val": 40},
+    "lsat_ar": {"source": "hf", "train": 20, "val": 20},
+    "strategyqa": {"source": "hf", "train": 40, "val": 40},
+    "mmlu_pro": {"source": "hf", "categories": "non_math", "train": 4, "val": 4},
 }
 OLD_KEYS = ("dev_size", "val_size", "splits", "heldout_tasks")
 
@@ -351,7 +359,10 @@ def test_readme_mentions_32k_context():
 
 # --- loop 2026-11-16-004: GPQA removed ---
 
-KEPT_BENCHMARK_KEYS = ["gsm8k", "bbh", "math500", "bbeh", "aime2024", "aime2025", "amc2023"]
+KEPT_BENCHMARK_KEYS = [
+    "gsm8k", "bbh", "math500", "bbeh", "aime2024", "aime2025", "amc2023",
+    "musr", "folio", "lsat_ar", "strategyqa", "mmlu_pro",
+]
 
 
 def test_benchmarks_package_still_imports():
@@ -408,9 +419,44 @@ def test_mock_overrides_have_no_gpqa():
     from skillopt.cli import _MOCK_BENCHMARK_OVERRIDES
 
     assert "gpqa" not in _MOCK_BENCHMARK_OVERRIDES
-    assert set(_MOCK_BENCHMARK_OVERRIDES) == {"gsm8k", "bbh", "math500", "aime2024", "aime2025", "amc2023", "bbeh"}
+    assert set(_MOCK_BENCHMARK_OVERRIDES) == {
+        "gsm8k", "bbh", "math500", "aime2024", "aime2025", "amc2023", "bbeh",
+        "musr", "folio", "lsat_ar", "strategyqa", "mmlu_pro",
+    }
 
 
 @pytest.mark.parametrize("s", ["gpqa", "idavidrein", "2311.12022"])
 def test_readme_has_no_gpqa(s):
     assert s not in _readme().lower(), s
+
+
+NON_MATH_SAMPLE_FILES = [
+    ("data/sample/musr/murder_mysteries.jsonl", 6),
+    ("data/sample/musr/object_placements.jsonl", 6),
+    ("data/sample/musr/team_allocation.jsonl", 6),
+    ("data/sample/folio/train.jsonl", 10),
+    ("data/sample/folio/test.jsonl", 4),
+    ("data/sample/lsat_ar/data.jsonl", 8),
+    ("data/sample/strategyqa/train.jsonl", 10),
+    ("data/sample/strategyqa/test.jsonl", 4),
+    ("data/sample/mmlu_pro/law.jsonl", 6),
+    ("data/sample/mmlu_pro/philosophy.jsonl", 6),
+    ("data/sample/mmlu_pro/biology.jsonl", 6),
+]
+
+
+@pytest.mark.parametrize("rel,lines", NON_MATH_SAMPLE_FILES)
+def test_non_math_sample_data_line_counts(rel, lines):
+    from helpers import count_lines
+
+    p = PROJECT_ROOT / rel
+    assert p.is_file(), rel
+    assert count_lines(p) == lines
+
+
+@pytest.mark.parametrize("s", [
+    "TAUR-Lab/MuSR", "tasksource/folio", "hails/agieval-lsat-ar", "ChilleD/StrategyQA", "TIGER-Lab/MMLU-Pro",
+    "musr", "folio", "lsat_ar", "strategyqa", "mmlu_pro", "Non-math reasoning benchmarks",
+])
+def test_readme_contains_non_math_benchmarks(s):
+    assert s in _readme(), s
