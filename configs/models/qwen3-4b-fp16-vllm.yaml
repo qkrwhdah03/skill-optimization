@@ -1,0 +1,18 @@
+# Qwen3-4B (fp16, ~8 GB weights) on vLLM. Faster alternative to Qwen3-8B for 24 GB GPUs without bf16
+# (compute capability < 8.0, e.g. TITAN RTX 7.5); optimizer + target can share this engine.
+# Context: max_model_len 32768 = Qwen3-4B native window (no YaRN). With ~8 GiB weights at
+# gpu_memory_utilization 0.92, ~12+ GiB remains for KV cache, enabling high continuous-batching concurrency.
+# max_tokens 30720 = 32768 - 2048 prompt headroom; longer prompts are capped by vLLM at max_model_len (flagged truncated).
+backend: vllm
+model: Qwen/Qwen3-4B
+engine:
+  dtype: float16
+  gpu_memory_utilization: 0.92
+  max_model_len: 32768
+generation:
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  max_tokens: 30720
+  seed: 0
+  enable_thinking: true

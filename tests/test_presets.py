@@ -7,7 +7,7 @@ from skillopt.config import load_config, read_raw_config
 from skillopt.llm import check_vram_budget, engine_key, get_llm_class
 
 MODELS = CONFIGS / "models"
-EXPECTED_PRESETS = ["mock.yaml", "qwen3-8b-fp16-vllm.yaml", "qwen3-8b-vllm.yaml"]
+EXPECTED_PRESETS = ["mock.yaml", "qwen3-4b-fp16-vllm.yaml", "qwen3-8b-fp16-vllm.yaml", "qwen3-8b-vllm.yaml"]
 REMOVED_PRESETS = ("qwen3-8b-fp8-vllm", "qwen3-8b-awq-vllm", "qwen3-4b-vllm", "qwen3-8b-hf",
                    "qwen3-8b-hf-4bit", "qwen3-8b-server", "openai-api")
 README_REQUIRED = ("qwen3-8b-fp16-vllm", "qwen3-8b-vllm", "mock", "compute capability", "8.0")
@@ -160,3 +160,29 @@ def test_optimizer_generation_unchanged():
     gen = cfg["llm"]["optimizer"]["generation"]
     assert gen["max_tokens"] == 1024
     assert gen["enable_thinking"] is False
+
+
+def test_qwen3_4b_fp16_preset_contents():
+    cfg = _load_preset("qwen3-4b-fp16-vllm")
+    assert cfg["backend"] == "vllm"
+    assert cfg["model"] == "Qwen/Qwen3-4B"
+    assert cfg["engine"]["dtype"] == "float16"
+    assert cfg["engine"]["gpu_memory_utilization"] == 0.92
+    assert cfg["engine"]["max_model_len"] == 32768
+    assert cfg["generation"]["max_tokens"] == 30720
+
+
+def test_override_to_qwen3_4b_fp16_shares_engine_and_fits_vram():
+    cfg = load_config(
+        CONFIGS / "config.yaml",
+        overrides=[
+            "llm.target.preset=qwen3-4b-fp16-vllm",
+            "llm.optimizer.preset=qwen3-4b-fp16-vllm",
+        ],
+    )
+    target, optimizer = cfg["llm"]["target"], cfg["llm"]["optimizer"]
+    assert target["model"] == "Qwen/Qwen3-4B"
+    assert optimizer["model"] == "Qwen/Qwen3-4B"
+    assert target["engine"]["dtype"] == "float16"
+    assert engine_key(target) == engine_key(optimizer)
+    assert check_vram_budget(cfg["llm"], 24) <= 24
