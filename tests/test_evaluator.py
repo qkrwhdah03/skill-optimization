@@ -877,3 +877,168 @@ def test_evaluator_bbh_sample_answer_tag_option_scored_correct():
     for it in hits:
         assert it.prediction == "f"
         assert it.correct is True
+
+
+# --- pooled cross-skill / cross-benchmark batching ---------------------------
+
+def test_supports_continuous_batching_flags():
+    from skillopt.llm import BaseLLM, MockLLM, VLLMBackend
+
+    assert BaseLLM.supports_continuous_batching is False
+    assert MockLLM.supports_continuous_batching is False
+    assert VLLMBackend.supports_continuous_batching is True
+
+
+def test_evaluator_pooled_property_and_validation():
+    from skillopt.llm import MockLLM
+
+    class _CBLLM(MockLLM):
+        supports_continuous_batching = True
+
+    plain = make_mock()
+    cb = _CBLLM({"backend": "mock", "model": "cb-mock"})
+    specs = [_spec("a", ["1"])]
+
+    assert Evaluator(plain, specs).pooled is False
+    assert Evaluator(cb, specs).pooled is True
+    assert Evaluator(plain, specs, pool_batches=True).pooled is True
+    assert Evaluator(cb, specs, pool_batches=False).pooled is False
+
+    for bad in (1, 0, "true", []):
+        with pytest.raises(ValueError):
+            Evaluator(plain, specs, pool_batches=bad)
+
+
+def _make_recording_llm(responses=None, seed=0, continuous=False):
+    from skillopt.llm import MockLLM
+
+    class _RecordingMock(MockLLM):
+        supports_continuous_batching = continuous
+
+        def __init__(self, config, role="default"):
+            super().__init__(config, role=role)
+            self.batch_sizes = []
+
+        def _generate_batch(self, prompts, gen):
+            self.batch_sizes.append(len(prompts))
+            return super()._generate_batch(prompts, gen)
+
+    cfg = {"backend": "mock", "model": "rec-mock", "seed": seed}
+    if responses is not None:
+        cfg["responses"] = list(responses)
+    return _RecordingMock(cfg)
+
+
+def test_pooled_evaluate_makes_single_batch_in_skill_bench_example_order():
+    specs = [_spec("a", ["1", "2", "3"]), _spec("b", ["4", "5"])]
+    skills = [get_baseline("cot"), get_baseline("direct")]
+
+    rec_pooled = _make_recording_llm(continuous=True)
+    ev_pooled = Evaluator(rec_pooled, specs, batch_size=2)
+    out_pooled = ev_pooled.evaluate(skills, "train")
+
+    assert rec_pooled.batch_sizes == [10]
+    expected_prompts = [
+        spec.benchmark.build_prompt(sk, ex)
+        for sk in skills
+        for spec in specs
+        for ex in spec.benchmark.load("train")
+    ]
+    assert rec_pooled.calls == expected_prompts
+    assert [e.skill_id for e in out_pooled] == ["cot", "direct"]
+
+    rec_unpooled = _make_recording_llm(continuous=False)
+    ev_unpooled = Evaluator(rec_unpooled, specs, batch_size=2)
+    ev_unpooled.evaluate(skills, "train")
+    assert rec_unpooled.batch_sizes == [2, 1, 2, 2, 1, 2]
+
+
+def test_pooled_evaluate_parity_and_edge_cases():
+    specs = [_spec("a", ["1", "2", "3"]), _spec("empty", []), _spec("b", ["4", "5"])]
+    skills = [get_baseline("cot"), get_baseline("direct")]
+
+    llm_seq = make_mock(responses=None, seed=7)
+    llm_pool = make_mock(responses=None, seed=7)
+    out_seq = Evaluator(llm_seq, specs, batch_size=2, pool_batches=False).evaluate(skills, "train")
+    out_pool = Evaluator(llm_pool, specs, batch_size=2, pool_batches=True).evaluate(skills, "train")
+
+    for e_seq, e_pool in zip(out_seq, out_pool):
+        assert e_seq.skill_id == e_pool.skill_id
+        assert e_seq.skill_tokens == e_pool.skill_tokens
+        assert list(e_seq.results) == list(e_pool.results)
+        for key in e_seq.results:
+            rs, rp = e_seq.results[key], e_pool.results[key]
+            assert rs.accuracy == pytest.approx(rp.accuracy)
+            assert [it.example_id for it in rs.items] == [it.example_id for it in rp.items]
+            assert [it.prediction for it in rs.items] == [it.prediction for it in rp.items]
+            assert [it.gold for it in rs.items] == [it.gold for it in rp.items]
+            assert [it.correct for it in rs.items] == [it.correct for it in rp.items]
+            assert [it.truncated for it in rs.items] == [it.truncated for it in rp.items]
+            assert [it.usage.to_dict() for it in rs.items] == [it.usage.to_dict() for it in rp.items]
+
+    # Empty skills list -> no calls
+    rec = _make_recording_llm(continuous=True)
+    ev = Evaluator(rec, _sample_specs(), batch_size=2)
+    assert ev.evaluate([], "train") == []
+    assert rec.batch_sizes == []
+
+    # limit=0 -> no LLM calls, n=0 per benchmark
+    zero = ev.evaluate([get_baseline("cot")], "train", limit=0)
+    assert rec.batch_sizes == []
+    assert all(r.n == 0 for r in zero[0].results.values())
+
+    # heldout skip rule works when pooled
+    held = ev.evaluate([get_baseline("cot"), get_baseline("direct")], "heldout", limit=2)
+    assert all(list(e.results) == ["bbh"] and e.results["bbh"].n == 2 for e in held)
+    assert rec.batch_sizes == [4]
+
+    # Unknown split raises ValueError with zero calls
+    rec_err = _make_recording_llm(continuous=True)
+    ev_err = Evaluator(rec_err, [_spec("a", ["1"])], batch_size=2)
+    with pytest.raises(ValueError):
+        ev_err.evaluate([get_baseline("cot")], "nope")
+    assert rec_err.batch_sizes == []
+
+
+def test_pooled_evaluate_skill_and_evaluate_split_single_batch():
+    specs = [_spec("a", ["1", "2", "3"]), _spec("b", ["4", "5"])]
+
+    rec_skill = _make_recording_llm(continuous=True)
+    ev_skill = Evaluator(rec_skill, specs, batch_size=2)
+    sk_res = ev_skill.evaluate_skill(get_baseline("cot"), "train")
+    assert rec_skill.batch_sizes == [5]
+    assert sk_res.results["a"].n == 3 and sk_res.results["b"].n == 2
+
+    rec_split = _make_recording_llm(continuous=True)
+    ev_split = Evaluator(rec_split, specs, batch_size=2)
+    sp_res = ev_split.evaluate_split(get_baseline("cot"), "a", "train")
+    assert rec_split.batch_sizes == [3]
+    assert sp_res.n == 3
+
+
+def test_cli_eval_only_pooled_matches_unpooled(tmp_path):
+    from helpers import CONFIGS, read_json
+    from skillopt.cli import main
+
+    cfg = str(CONFIGS / "config.yaml")
+    r_seq = main([
+        "--config", cfg, "--mock", "--eval-only", "--limit", "1",
+        "--set", f"run.root={(tmp_path / 'seq').as_posix()}",
+        "--set", "evaluator.pool_batches=false",
+    ])
+    r_pool = main([
+        "--config", cfg, "--mock", "--eval-only", "--limit", "1",
+        "--set", f"run.root={(tmp_path / 'pool').as_posix()}",
+        "--set", "evaluator.pool_batches=true",
+    ])
+    s_seq = read_json(r_seq / "summary.json")
+    s_pool = read_json(r_pool / "summary.json")
+    assert [e["skill_id"] for e in s_seq] == [e["skill_id"] for e in s_pool] == ["direct", "cot", "cod"]
+    for a, b in zip(s_seq, s_pool):
+        assert list(a["benchmarks"]) == list(b["benchmarks"])
+        for k in a["benchmarks"]:
+            ba, bb = dict(a["benchmarks"][k]), dict(b["benchmarks"][k])
+            ba.pop("avg_latency", None)
+            bb.pop("avg_latency", None)
+            assert ba == bb
+

@@ -1,7 +1,7 @@
 """vLLM in-process backend. ``vllm`` is imported lazily inside the engine factory."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from .base import BaseLLM, RawGeneration
 from .registry import register_llm
@@ -14,6 +14,8 @@ _SAMPLING_KEYS = ("temperature", "top_p", "top_k", "max_tokens", "seed")
 @register_llm("vllm")
 class VLLMBackend(BaseLLM):
     """Runs a model with ``vllm.LLM``. Roles with the same backend/model/engine share one engine."""
+
+    supports_continuous_batching: ClassVar[bool] = True
 
     def __init__(self, config: dict, role: str = "default") -> None:
         super().__init__(config, role=role)

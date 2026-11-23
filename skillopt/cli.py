@@ -253,10 +253,13 @@ def run_eval_only(cfg: dict) -> Path:
     evaluator = Evaluator(target, specs, **(cfg.get("evaluator") or {}))
 
     logger.info(f"run dir: {run.path}")
+    evaluations = evaluator.evaluate(skills, split, limit) if evaluator.pooled else None
     summaries = []
     for i, skill in enumerate(skills, 1):
         logger.info(f"skill {i}/{len(skills)}: {skill.id}")
-        evaluation = evaluator.evaluate_skill(skill, split, limit)
+        evaluation = (
+            evaluations[i - 1] if evaluations is not None else evaluator.evaluate_skill(skill, split, limit)
+        )
         run.save_skill(skill, evaluation.skill_tokens)
         run.save_evaluation(evaluation)
         summaries.append(evaluation.summary())

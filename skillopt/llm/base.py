@@ -114,6 +114,7 @@ class BaseLLM(ABC):
     """
 
     uses_gpu: ClassVar[bool] = True
+    supports_continuous_batching: ClassVar[bool] = False
 
     def __init__(self, config: dict, role: str = "default") -> None:
         self.config = dict(config)

@@ -22,8 +22,8 @@ import re
 import time
 from dataclasses import dataclass
 
-from .benchmarks import Benchmark, build_benchmark
-from .llm import BaseLLM, TokenUsage
+from .benchmarks import Benchmark, Example, build_benchmark
+from .llm import BaseLLM, LLMResponse, TokenUsage
 from .skills import Skill, skill_text
 
 logger = logging.getLogger(__name__)
@@ -197,12 +197,45 @@ class SkillEvaluation:
         }
 
 
+def _make_item_result(benchmark: Benchmark, ex: Example, resp: LLMResponse) -> ItemResult:
+    pred = benchmark.extract_answer_for(resp.text, ex)
+    return ItemResult(
+        example_id=ex.id,
+        prediction=pred,
+        gold=ex.answer,
+        correct=bool(benchmark.score(pred, ex.answer)),
+        usage=resp.usage,
+        latency=resp.latency,
+        response_text=resp.text,
+        reasoning_text=resp.reasoning_text,
+        question=ex.question,
+        truncated=bool(resp.truncated),
+    )
+
+
+def _log_eval_done(result: EvalResult, secs: float) -> None:
+    logger.info(
+        f"eval {result.skill_id:<24} {result.benchmark:<10} {result.split:<8} done n={result.n} "
+        f"acc={result.accuracy:.3f} out_tok={result.avg_output_tokens:.1f} "
+        f"think_tok={result.avg_reasoning_tokens:.1f} trunc={result.num_truncated} "
+        f"trunc_rate={result.truncation_rate:.3f} time={secs:.1f}s"
+    )
+
+
 class Evaluator:
     """Measures a skill on a list of benchmarks with the fixed target LLM. Never judges."""
 
-    def __init__(self, llm: BaseLLM, benchmarks: list[BenchmarkSpec], batch_size: int = 16) -> None:
+    def __init__(
+        self,
+        llm: BaseLLM,
+        benchmarks: list[BenchmarkSpec],
+        batch_size: int = 16,
+        pool_batches: bool | None = None,
+    ) -> None:
         if batch_size < 1:
             raise ValueError("batch_size must be >= 1")
+        if pool_batches is not None and not isinstance(pool_batches, bool):
+            raise ValueError(f"pool_batches must be a bool or None, got {pool_batches!r}")
         specs = list(benchmarks or [])
         if not specs:
             raise ValueError("Evaluator needs at least one benchmark spec")
@@ -214,7 +247,14 @@ class Evaluator:
         self.llm = llm
         self.benchmarks: list[BenchmarkSpec] = specs
         self.batch_size = int(batch_size)
+        self.pool_batches: bool | None = pool_batches
         self._size_warned = False
+
+    @property
+    def pooled(self) -> bool:
+        if self.pool_batches is not None:
+            return self.pool_batches
+        return bool(getattr(self.llm, "supports_continuous_batching", False))
 
     @property
     def benchmark_keys(self) -> list[str]:
@@ -225,6 +265,21 @@ class Evaluator:
             return self._specs[key]
         except KeyError:
             raise KeyError(f"unknown benchmark key '{key}'; available: {', '.join(self._specs)}") from None
+
+    def _split_keys(self, split: str) -> list[str]:
+        keys = [key for key, spec in self._specs.items() if split in spec.benchmark.splits]
+        if not keys:
+            available = "; ".join(
+                f"{key}: {', '.join(spec.benchmark.splits)}" for key, spec in self._specs.items()
+            )
+            raise ValueError(f"no benchmark provides split '{split}' (available splits: {available})")
+        return keys
+
+    def _load_examples(self, key: str, split: str, limit: int | None) -> list[Example]:
+        examples = self._spec(key).benchmark.load(split)
+        if limit is not None:
+            examples = examples[:limit]
+        return examples
 
     def skill_tokens(self, skill: Skill) -> int | None:
         """Size of ``skill_text(skill)`` in target-tokenizer tokens; None (one WARNING per Evaluator) on error."""
@@ -238,40 +293,27 @@ class Evaluator:
 
     def evaluate_split(self, skill: Skill, key: str, split: str, limit: int | None = None) -> EvalResult:
         benchmark = self._spec(key).benchmark
-        examples = benchmark.load(split)
-        if limit is not None:
-            examples = examples[:limit]
+        examples = self._load_examples(key, split, limit)
         started = time.perf_counter()
         total = len(examples)
         items: list[ItemResult] = []
-        for start in range(0, total, self.batch_size):
-            chunk = examples[start : start + self.batch_size]
-            prompts = [benchmark.build_prompt(skill, ex) for ex in chunk]
-            responses = self.llm.generate_batch(prompts)
-            for ex, resp in zip(chunk, responses):
-                pred = benchmark.extract_answer_for(resp.text, ex)
-                items.append(
-                    ItemResult(
-                        example_id=ex.id,
-                        prediction=pred,
-                        gold=ex.answer,
-                        correct=bool(benchmark.score(pred, ex.answer)),
-                        usage=resp.usage,
-                        latency=resp.latency,
-                        response_text=resp.text,
-                        reasoning_text=resp.reasoning_text,
-                        question=ex.question,
-                        truncated=bool(resp.truncated),
-                    )
-                )
-            logger.info(f"eval {skill.id:<24} {key:<10} {split:<8} {len(items):>5}/{total}")
+        if self.pooled:
+            if total > 0:
+                prompts = [benchmark.build_prompt(skill, ex) for ex in examples]
+                responses = self.llm.generate_batch(prompts)
+                items = [_make_item_result(benchmark, ex, resp) for ex, resp in zip(examples, responses)]
+                logger.info(f"eval {skill.id:<24} {key:<10} {split:<8} {len(items):>5}/{total}")
+        else:
+            for start in range(0, total, self.batch_size):
+                chunk = examples[start : start + self.batch_size]
+                prompts = [benchmark.build_prompt(skill, ex) for ex in chunk]
+                responses = self.llm.generate_batch(prompts)
+                for ex, resp in zip(chunk, responses):
+                    items.append(_make_item_result(benchmark, ex, resp))
+                logger.info(f"eval {skill.id:<24} {key:<10} {split:<8} {len(items):>5}/{total}")
         result = EvalResult(skill_id=skill.id, benchmark=key, split=split, items=items)
         secs = time.perf_counter() - started
-        logger.info(
-            f"eval {skill.id:<24} {key:<10} {split:<8} done n={result.n} acc={result.accuracy:.3f} "
-            f"out_tok={result.avg_output_tokens:.1f} think_tok={result.avg_reasoning_tokens:.1f} "
-            f"trunc={result.num_truncated} trunc_rate={result.truncation_rate:.3f} time={secs:.1f}s"
-        )
+        _log_eval_done(result, secs)
         return result
 
     def evaluate_skill(self, skill: Skill, split: str = "train", limit: int | None = None) -> SkillEvaluation:
@@ -279,12 +321,9 @@ class Evaluator:
 
         Benchmarks whose ``splits`` lack ``split`` are skipped; ``limit`` caps items per benchmark (None = all).
         """
-        keys = [key for key, spec in self._specs.items() if split in spec.benchmark.splits]
-        if not keys:
-            available = "; ".join(
-                f"{key}: {', '.join(spec.benchmark.splits)}" for key, spec in self._specs.items()
-            )
-            raise ValueError(f"no benchmark provides split '{split}' (available splits: {available})")
+        if self.pooled:
+            return self.evaluate([skill], split, limit)[0]
+        keys = self._split_keys(split)
         skill_tokens = self.skill_tokens(skill)
         results = {key: self.evaluate_split(skill, key, split, limit) for key in keys}
         return SkillEvaluation(skill=skill, split=split, results=results, skill_tokens=skill_tokens)
@@ -293,7 +332,56 @@ class Evaluator:
         """Evaluate every skill on every benchmark; one ``SkillEvaluation`` per skill, same order as ``skills``."""
         if not isinstance(skills, (list, tuple)):
             raise TypeError(f"evaluate() expects a list of Skill, got {type(skills).__name__}; use evaluate_skill()")
-        return [self.evaluate_skill(skill, split, limit) for skill in skills]
+        if not skills:
+            return []
+        if not self.pooled:
+            return [self.evaluate_skill(skill, split, limit) for skill in skills]
+
+        keys = self._split_keys(split)
+        examples_by_key = {key: self._load_examples(key, split, limit) for key in keys}
+        skill_tokens_list = [self.skill_tokens(skill) for skill in skills]
+
+        prompts: list[str] = []
+        slots: list[tuple[int, str, Example]] = []
+        items_by_pair: dict[tuple[int, str], list[ItemResult]] = {
+            (i, key): [] for i in range(len(skills)) for key in keys
+        }
+        for skill_idx, skill in enumerate(skills):
+            for key in keys:
+                benchmark = self._spec(key).benchmark
+                for ex in examples_by_key[key]:
+                    prompts.append(benchmark.build_prompt(skill, ex))
+                    slots.append((skill_idx, key, ex))
+
+        logger.info(f"eval pooled {len(skills)} skills x {len(keys)} benchmarks ({split}): {len(prompts)} prompts")
+        started = time.perf_counter()
+        responses = self.llm.generate_batch(prompts) if prompts else []
+        for (skill_idx, key, ex), resp in zip(slots, responses):
+            benchmark = self._spec(key).benchmark
+            items_by_pair[(skill_idx, key)].append(_make_item_result(benchmark, ex, resp))
+        secs = time.perf_counter() - started
+
+        evaluations: list[SkillEvaluation] = []
+        for skill_idx, skill in enumerate(skills):
+            results: dict[str, EvalResult] = {}
+            for key in keys:
+                res = EvalResult(
+                    skill_id=skill.id,
+                    benchmark=key,
+                    split=split,
+                    items=items_by_pair[(skill_idx, key)],
+                )
+                _log_eval_done(res, secs)
+                results[key] = res
+            evaluations.append(
+                SkillEvaluation(
+                    skill=skill,
+                    split=split,
+                    results=results,
+                    skill_tokens=skill_tokens_list[skill_idx],
+                )
+            )
+        return evaluations
 
 
 __all__ = [
