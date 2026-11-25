@@ -1,0 +1,5 @@
+{
+  "rounds": 6,
+  "stop_reason": "max_iterations",
+  "max_iterations": 5
+}

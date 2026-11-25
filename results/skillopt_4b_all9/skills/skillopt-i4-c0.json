@@ -1,0 +1,47 @@
+{
+  "id": "skillopt-i4-c0",
+  "instruction": "Think step by step, but only keep a minimum draft for each thinking step, with 5 words at most.\nLabel steps with [STEP] for clarity",
+  "few_shot": [],
+  "parent_id": "cod",
+  "metadata": {
+    "optimizer": "skillopt",
+    "iteration": 4,
+    "edit_budget": 2,
+    "lr_schedule": "cosine",
+    "edit_mode": "patch",
+    "cost_metric": "output",
+    "applied_edits": "[append] Label steps with [STEP] for clarity",
+    "edit_apply_report": [
+      {
+        "op": "replace",
+        "target": "Think step by step, but onl...",
+        "status": "skipped",
+        "reason": "target_not_found",
+        "source_type": "failure"
+      },
+      {
+        "op": "append",
+        "target": "",
+        "status": "applied",
+        "reason": "",
+        "source_type": "failure"
+      }
+    ],
+    "incumbent_id": "cod",
+    "incumbent_feasible": true,
+    "incumbent_norm_cost": 0.521023,
+    "incumbent_score": 10.478977,
+    "gate_rejected_count": 2,
+    "meta_epoch": 2,
+    "slow_update": false,
+    "optimizer_model": "Qwen/Qwen3-4B"
+  },
+  "origin": {
+    "parents": [
+      "cod"
+    ],
+    "operation": "skillopt_edit",
+    "note": "L_t=2 patch (1 edits) on cod (acc=0.575, cost=0.52x): [append] Label steps with [STEP] for clarity"
+  },
+  "num_tokens": 31
+}

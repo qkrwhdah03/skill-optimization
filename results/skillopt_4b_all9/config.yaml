@@ -1,0 +1,99 @@
+seed: 0
+run:
+  root: runs
+  name: skillopt_4b_all9
+hardware:
+  vram_gb: 24
+llm:
+  target:
+    backend: vllm
+    model: Qwen/Qwen3-4B
+    engine:
+      dtype: float16
+      gpu_memory_utilization: 0.92
+      max_model_len: 32768
+      disable_log_stats: false
+    generation:
+      temperature: 0.6
+      top_p: 0.95
+      top_k: 20
+      max_tokens: 8192
+      seed: 0
+      enable_thinking: true
+  optimizer:
+    backend: vllm
+    model: Qwen/Qwen3-4B
+    engine:
+      dtype: float16
+      gpu_memory_utilization: 0.92
+      max_model_len: 32768
+      disable_log_stats: false
+    generation:
+      temperature: 0.8
+      top_p: 0.95
+      top_k: 20
+      max_tokens: 1024
+      seed: 0
+      enable_thinking: false
+benchmarks:
+  gsm8k:
+    source: hf
+    train: 200
+    val: 200
+  bbh:
+    source: hf
+    tasks: all
+    heldout:
+    - web_of_lies
+    train: 10
+    val: 10
+  math500:
+    source: hf
+    train: 50
+    val: 50
+  bbeh:
+    source: hf
+    tasks: all
+    mini: false
+    train: 2
+    val: 2
+  aime2024:
+    source: hf
+  aime2025:
+    source: hf
+  amc2023:
+    source: hf
+  musr:
+    source: hf
+    tasks: all
+    train: 10
+    val: 10
+  folio:
+    source: hf
+    train: 40
+    val: 40
+  lsat_ar:
+    source: hf
+    train: 20
+    val: 20
+  strategyqa:
+    source: hf
+    train: 40
+    val: 40
+  mmlu_pro:
+    source: hf
+    categories: non_math
+    train: 4
+    val: 4
+evaluator:
+  batch_size: 64
+optimizer:
+  name: skillopt
+max_iterations: 5
+eval:
+  skills:
+  - direct
+  - cot
+  - cod
+  split: test
+  limit: null

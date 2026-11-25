@@ -47,6 +47,7 @@ class Mine(Optimizer):                                        # self.llm, self.p
 - `results`: this round's `SkillEvaluation`s, in prompt order. `history`: earlier rounds, oldest first.
 - Add one file to `skillopt/optimizer/algorithms/` and set `optimizer: {name: mine, ...}`.
 - Fill in the template `my_optimizer.py`; `opro.py` is a worked example.
+- Implemented discrete optimizers (`skillopt`, `gepa`, `textgrad`, `mipro`, `opro`): see [Optimizers & collapse overview](docs/optimizers.md), [SkillOpt adaptation docs](docs/skillopt.md), and saved runs in `results/`.
 - Baseline skills `direct`, `cot`, `cod`: `get_baseline` in `skillopt/baselines.py`.
 - Optional: attach `origin=SkillOrigin(parents=[...], operation="...", note="...")` to a returned `Skill`; the run report shows it as is.
 

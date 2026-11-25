@@ -1,0 +1,8 @@
+{
+  "calls": 41,
+  "input_tokens": 63532,
+  "output_tokens": 8591,
+  "reasoning_tokens": 126,
+  "total_tokens": 72123,
+  "latency": 146.42812657402828
+}
